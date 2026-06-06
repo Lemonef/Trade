@@ -1,0 +1,66 @@
+//@version=5
+// ============================================================================
+//  PYRAMID DONCHIAN  (the Python-engine model, as a TradingView strategy)
+//
+//  Long-only Donchian breakout + Turtle pyramiding. This is ONE sleeve — the
+//  basket = run it on each coin (BTC/ETH/SOL/...) and pool the accounts.
+//
+//  HONEST EXPECTATION (from corrected Python backtest, 4H):
+//   - Bull regimes (2021, 2023-24): strong. Bear/chop (2022, 2025-26): bleeds.
+//   - It is long-only crypto trend BETA, ~Sharpe 0.4 full-period, NOT a holy grail.
+//   - Optional 200-period MA market filter (default ON) skips downtrends to cut bear losses.
+//   (Earlier "108% CAGR / Sharpe 2.6" was a code bug — free pyramiding. Fixed.)
+// ============================================================================
+
+strategy("Pyramid Donchian", shorttitle="PyrDon", overlay=true, initial_capital=10000,
+     default_qty_type=strategy.fixed, commission_type=strategy.commission.percent,
+     commission_value=0.1, slippage=2, pyramiding=3, process_orders_on_close=true)
+
+// Inputs
+entryPeriod = input.int(20, "Entry (N-high breakout)", minval=5, group="Donchian")
+exitPeriod  = input.int(10, "Exit (M-low breakdown)", minval=3, group="Donchian")
+useADX      = input.bool(true, "ADX trend filter", group="Filters")
+adxThresh   = input.float(25, "ADX min", group="Filters")
+useMktFilter= input.bool(true, "Only long above 200-MA (skip bears)", group="Filters")
+maLen       = input.int(200, "Market MA length", group="Filters")
+maxUnits    = input.int(3, "Max pyramid units", minval=1, maxval=8, group="Pyramid")
+riskPercent = input.float(5.0, "Risk % per unit", minval=0.5, maxval=10, step=0.5, group="Risk")
+atrStopMult = input.float(2.0, "ATR stop mult", minval=1.0, maxval=4.0, step=0.5, group="Risk")
+atrLen      = input.int(14, "ATR length", group="Risk")
+startDate   = input.time(timestamp("01 Jan 2023 00:00 +0000"), "Backtest start", group="Backtest")
+inDate      = time >= startDate
+
+// Indicators
+donHi = ta.highest(high, entryPeriod)
+donLo = ta.lowest(low, exitPeriod)
+[dp, dm, adx] = ta.dmi(14, 14)
+ma = ta.sma(close, maLen)
+atr = ta.atr(atrLen)
+
+adxOK = useADX ? adx > adxThresh : true
+mktOK = useMktFilter ? close > ma : true
+breakout = close > donHi[1] and adxOK and mktOK and inDate
+breakdown = close < donLo[1]
+
+stopDist = atr * atrStopMult
+unitQty = stopDist > 0 ? (strategy.equity * riskPercent / 100) / stopDist : 0
+
+// Entry: pyramiding via strategy() pyramiding=N + maxUnits guard
+if breakout and strategy.opentrades < maxUnits
+    notionalCap = strategy.equity * 0.95 / close
+    q = math.min(unitQty, math.max(0, notionalCap - strategy.position_size))
+    if q > 0
+        strategy.entry("L" + str.tostring(strategy.opentrades), strategy.long, qty=q)
+
+// Exit whole position on M-low breakdown or ATR stop hit
+if strategy.position_size > 0
+    stopLevel = strategy.position_avg_price - stopDist
+    if breakdown or low < stopLevel
+        strategy.close_all(comment="exit")
+
+// Visuals
+plot(donHi, "N-high", color=color.new(color.green, 50))
+plot(donLo, "M-low", color=color.new(color.red, 50))
+plot(useMktFilter ? ma : na, "200-MA", color=color.new(color.gray, 30))
+bgcolor(mktOK ? na : color.new(color.red, 92))
+plotshape(breakout, "Breakout", shape.triangleup, location.belowbar, color.lime, size=size.tiny)

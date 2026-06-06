@@ -84,18 +84,19 @@ ETH +18.69% — but breaks SOL (−5.91%). 1D = higher quality / lower CAGR (BTC
 TF matters: 4H for CAGR, 1D for safety; 1D un-breaks SOL (thin sample). No single market+TF hits
 all targets. **Best deployment = Hybrid on BTC/ETH + QB V1 on SOL/XAU (diversified book).**
 
-## ★ BREAKTHROUGH — Python backtest engine + pyramided-Donchian basket (backtest/)
-Built a Python engine (`backtest/engine.py`) to test what TradingView can't: pyramiding, leverage,
-and a real multi-asset combined equity curve. Binance data, 10 coins, 4H, 2023-26.
-- **Pyramiding (Turtle add-units) into Donchian breakouts beat everything** in a 210-run grid.
-- **Diversified basket portfolio** (10 coins, one account) → Sharpe **2.60** (sleeves only 0.5-1.75).
-- Realistic config (pyr=3, ATR stop 2.0): equal-weight 1.0x = **108% CAGR / 20% DD / Sharpe 2.6**;
-  de-levered 0.7x = **68.5% / 14.6% DD / Sharpe 2.6** (the 70-80% target with strong Sharpe).
-- Out-of-sample TEST (2025-26): still **75.8% CAGR / Sharpe 2.16**. Not pure curve-fit.
-- ⚠️ In-sample bull regime + close-based stops = optimistic. Discarded a stop=3.0 "1096% CAGR"
-  artifact (wide stop never fires = leveraged buy&hold). Needs bear-market retest + intrabar stops
-  + funding costs + walk-forward before live. Full report: backtest_results/PORTFOLIO_PYRAMID.md.
-- `backtest/data/` is gitignored — re-fetch with `backtest/fetch_universe.py`.
+## Python backtest engine + pyramided-Donchian basket (backtest/) — CORRECTED
+Built a Python engine (`backtest/engine.py`) to test pyramiding/leverage/portfolio. Binance, 10
+coins, 4H. **A pyramiding bug initially showed 108% CAGR / Sharpe 2.6 — that was free leverage
+(added units, only charged fees). FIXED.** Honest numbers below; lesson: a +1000% / Sharpe>3 crypto
+backtest is a bug until proven otherwise (caught it when 2022 bear showed +505% on a coin down 90%).
+- Real basket (equal-weight, fixed engine) 2023-26: **CAGR 5.56% / DD 34% / Sharpe 0.35.** Leverage
+  doesn't help (Sharpe flat ~0.4).
+- **Fails out-of-sample**: TRAIN 2023-24 Sharpe 0.70 → TEST 2025-26 Sharpe 0.00 (−2.6% CAGR).
+- **Bear OOS 2021-2022**: 2021 bull +148% (Sh 2.57) but **2022 crash −19% (Sh −0.90)**.
+- = long-only crypto **trend BETA**: wins bull, bleeds bear/chop. Only BTC sleeve stable (Sh 0.95).
+- Next: 200-MA market filter (skip bears), concentrate on BTC, walk-forward, intrabar stops, funding.
+- Pine version: `strategies/donchian-breakout/PYRAMID_DONCHIAN.pine` (has 200-MA filter toggle).
+- Full corrected report: backtest_results/PORTFOLIO_PYRAMID.md. `backtest/data/` gitignored.
 
 ## QB V3 + Portfolio (backtest_results/QB_V3_AND_PORTFOLIO.md)
 V3 tried per-asset engine map + chandelier trailing. Both inconclusive: per-asset map starves

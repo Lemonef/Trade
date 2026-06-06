@@ -161,15 +161,18 @@ def backtest(df, cfg):
                 if price >= bb_basis[i] or rv[i] > rsi_exit: exit_now = True
             if price < stop: exit_now = True
             # pyramiding: add unit on new breakout (trend leg only)
-            if not exit_now and leg == "trend" and pyr_max > 0 and adds < pyr_max and trend_entry(i):
-                add_units = (equity*risk)/(av[i]*stop_mult) if av[i] > 0 else 0
-                notional_cap = lev*equity/price
-                cur_not = units
-                add_units = min(add_units, max(0, notional_cap-cur_not))
+            if not exit_now and leg == "trend" and pyr_max > 0 and adds < pyr_max and trend_entry(i) and av[i] > 0:
+                cur_eq = eq_cash + units*price
+                add_units = (cur_eq*risk)/(av[i]*stop_mult)
+                notional_cap = lev*cur_eq/price
+                add_units = min(add_units, max(0.0, notional_cap - units))
+                max_by_cash = eq_cash/(price*(1+COMM+SLIP))   # can't spend cash you don't have
+                add_units = min(add_units, max(0.0, max_by_cash))
                 if add_units > 0:
-                    cost = add_units*price*(COMM+SLIP)
-                    units += add_units; equity -= cost; adds += 1
-                    entry = ((entry*(units-add_units))+price*add_units)/units
+                    eq_cash -= add_units*price*(1+COMM+SLIP)   # pay notional + fees (was the bug)
+                    new_units = units + add_units
+                    entry = (entry*units + price*add_units)/new_units
+                    units = new_units; adds += 1
                     stop = entry - av[i]*stop_mult
             if exit_now:
                 proceeds = units*price*(1-COMM-SLIP)
