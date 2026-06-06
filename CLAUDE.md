@@ -16,6 +16,7 @@ Automated trading strategy R&D. Owner: Zen (19, Thai uni student). Capital ~$2,8
 | `strategies/trend-meter/TM_LongShort.pine` | Strategy 1 — Trend Meter long+short (exit on band flip). |
 | `strategies/momentum-reversion/MR_V2.pine` | Strategy 2 — no RSI70 exit, no volume filter, wider zones, 5% risk. (V1 removed: over-filtered.) |
 | `strategies/quant-blend/QB_V1.pine` | Strategy 3 — ADX regime + Supertrend + RSI + Bollinger. |
+| `strategies/quant-blend/QB_V2_hybrid.pine` | Strategy 3b — QB regime switch with Donchian trend leg. Wins BTC 4H (CAGR 27.81%). |
 | `strategies/donchian-breakout/DONCHIAN_V1.pine` | Strategy 4 — pure breakout, hold trend, exit on prior M-low. |
 | `backtest_results/SWEEP_2023_4H.md` | Full 5-strategy × 4-market sweep (2023-26). |
 | `backtest_results/` | Reports + (deleted) scratch screenshots. |
@@ -75,3 +76,9 @@ See `backtest_results/SWEEP_2023_4H.md` for the complete 20-cell table. Highligh
 **Cross-finding:** QB V1 wins mean-reversion markets (SOL/XAU), loses BTC/ETH. Donchian is the
 opposite — wins trending BTC/ETH, loses SOL/XAU. TM-LO = highest CAGR but highest DD; shorts (L+S)
 always hurt. QB V1 at file-default sizing is conservative; tuned (Risk 5/ATR 2.5) → SOL ~23.63%.
+
+## QB V2 Hybrid (Donchian trend leg) — see backtest_results/QB_V2_HYBRID.md
+Swapping QB's trend leg for Donchian flips the camp: BTC 4H **CAGR 27.81%** (PF 1.59, DD 20.7%),
+ETH +18.69% — but breaks SOL (−5.91%). 1D = higher quality / lower CAGR (BTC PF 2.50, DD 9.2%).
+TF matters: 4H for CAGR, 1D for safety; 1D un-breaks SOL (thin sample). No single market+TF hits
+all targets. **Best deployment = Hybrid on BTC/ETH + QB V1 on SOL/XAU (diversified book).**

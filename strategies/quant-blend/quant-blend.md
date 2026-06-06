@@ -22,3 +22,9 @@ Prior "current best". Back to [[index]] · [[CLAUDE]]. Pine: `QB_V1.pine`.
 - **Best quality of the whole sweep**: SOL PF 2.78 / DD 5.2%, XAU PF 3.08 / DD 3.8%.
 - Mean-reversion camp with [[momentum-reversion]]; opposite of trend camp [[trend-meter]] / [[donchian-breakout]].
 - Ceiling ~23% CAGR (pyramid + daily TF didn't help). Next: graft trend-leg trailing or route by asset.
+
+## V2 Hybrid (`QB_V2_hybrid.pine`) — Donchian trend leg
+Swapped the weak Supertrend trend leg for a **Donchian breakout** (keeps Bollinger range leg).
+Result: flipped the camp — now wins **BTC 4H (CAGR 27.81%, PF 1.59)** and ETH (+18.69%), but
+**broke SOL** (−5.91%). 1D smooths it (BTC PF 2.50 / DD 9%, SOL +13.42%). Full report:
+[[QB_V2_HYBRID]]. Best deployment: **Hybrid on BTC/ETH, V1 on SOL/XAU** (portfolio).
