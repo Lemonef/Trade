@@ -14,8 +14,7 @@ Automated trading strategy R&D. Owner: Zen (19, Thai uni student). Capital ~$2,8
 |---|---|
 | `strategies/trend-meter/TM_LongOnly.pine` | Strategy 1 — Trend Meter long-only (EMA 13/21/34/55 + Stoch RSI). |
 | `strategies/trend-meter/TM_LongShort.pine` | Strategy 1 — Trend Meter long+short (exit on band flip). |
-| `strategies/momentum-reversion/MR_V1.pine` | Strategy 2 V1 — RSI pullback + ROC + Volume + ATR (over-filtered). |
-| `strategies/momentum-reversion/MR_V2.pine` | Strategy 2 V2 — no RSI70 exit, no volume filter, wider zones, 5% risk. |
+| `strategies/momentum-reversion/MR_V2.pine` | Strategy 2 — no RSI70 exit, no volume filter, wider zones, 5% risk. (V1 removed: over-filtered.) |
 | `strategies/quant-blend/QB_V1.pine` | Strategy 3 — ADX regime + Supertrend + RSI + Bollinger. |
 | `strategies/donchian-breakout/DONCHIAN_V1.pine` | Strategy 4 — pure breakout, hold trend, exit on prior M-low. |
 | `backtest_results/SWEEP_2023_4H.md` | Full 5-strategy × 4-market sweep (2023-26). |
@@ -71,7 +70,7 @@ See `backtest_results/SWEEP_2023_4H.md` for the complete 20-cell table. Highligh
 | QB V1 (default) | SOL | 11.55% | 59.38% | 2.78 | 5.23% |
 | QB V1 (default) | XAU | 4.73% | 52.63% | 3.084 | 3.76% |
 | MR V2 | BTC | 11.12% | 58.33% | 1.99 | 18.17% |
-| MR V1 | BTC | 3.82% | 61.54% | 2.788 | 5.12% |
+| MR V2 | XAU | 1.70% | 58.33% | 2.464 | 3.33% |
 
 **Cross-finding:** QB V1 wins mean-reversion markets (SOL/XAU), loses BTC/ETH. Donchian is the
 opposite — wins trending BTC/ETH, loses SOL/XAU. TM-LO = highest CAGR but highest DD; shorts (L+S)

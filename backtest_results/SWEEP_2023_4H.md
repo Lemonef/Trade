@@ -13,10 +13,6 @@ Re-set custom date range to 2023-01-01 on EVERY script switch (it resets to char
 | TM Long+Short | BTC | 16.87% | 35.25% (49/139) | 1.198 | 31.15% | +104.15% | meh |
 | TM Long+Short | ETH | −11.45% | 25.17% (37/147) | 0.888 | 54.56% | −17.26% | ❌ losing |
 | TM Long+Short | XAU | 6.69% | 35.11% (33/94) | 1.287 | 15.02% | +28.03% | weak |
-| MR V1 | SOL | 1.64% | 53.33% (8/15) | 1.444 | 7.19% | +5.75% | flat, over-filtered |
-| MR V1 | BTC | 3.82% | 61.54% (8/13) | 2.788 | 5.12% | +13.73% | great PF, tiny CAGR (13 trades) |
-| MR V1 | ETH | 0.35% | 47.06% (8/17) | 1.093 | 7.19% | +1.22% | flat |
-| MR V1 | XAU | — | — (0 trades) | — | — | — | ❌ no trades (incompatible) |
 | MR V2 | SOL | 10.86% | 50.00% (9/18) | 1.866 | 15.49% | +42.46% | balanced |
 | MR V2 | BTC | 11.12% | 58.33% (14/24) | 1.99 | 18.17% | +43.61% | 🟢 best MR V2 |
 | MR V2 | ETH | 8.20% | 40.74% (11/27) | 1.519 | 19.31% | +31.07% | ok |
@@ -39,6 +35,6 @@ higher CAGR + higher DD (~20%). To replicate, set Risk%=5.0, ATR stop=2.5 in inp
 - **QB V1 ↔ Donchian are opposites**: QB wins SOL/XAU (mean-reversion regimes), loses BTC/ETH;
   Donchian wins BTC/ETH (clean trends), loses SOL/XAU.
 - **TM Long Only** = highest raw CAGR (SOL 48.84%, BTC 39.52%) but high DD; shorts (L+S) always hurt.
-- **MR V1** over-filtered → near-flat everywhere (great PF, ~13 trades). **MR V2** = balanced mid (~8-11% CAGR).
+- **MR V2** = balanced mid (~8-11% CAGR, controlled DD). (MR V1 removed — over-filtered, superseded.)
 - No strategy hits the 30%+/PF2/DD<20 target on default params except TM-LO by CAGR (but DD too high).
-- Best risk-adjusted: QB V1/XAU (PF 3.08, DD 3.76%), QB V1/SOL (PF 2.78, DD 5.23%), MR V1/BTC (PF 2.79, DD 5.12%).
+- Best risk-adjusted: QB V1/XAU (PF 3.08, DD 3.76%), QB V1/SOL (PF 2.78, DD 5.23%), MR V2/XAU (PF 2.46, DD 3.33%).
