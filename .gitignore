@@ -1,6 +1,11 @@
 # graphify internal temp files (keep graph.html / graph.json / GRAPH_REPORT.md / cost.json)
 graphify-out/.graphify_*
 
+# backtest price data (re-fetchable via backtest/fetch_universe.py)
+backtest/data/
+__pycache__/
+*.pyc
+
 # OS / editor cruft
 Thumbs.db
 .DS_Store
