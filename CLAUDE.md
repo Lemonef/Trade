@@ -17,6 +17,7 @@ Automated trading strategy R&D. Owner: Zen (19, Thai uni student). Capital ~$2,8
 | `strategies/momentum-reversion/MR_V2.pine` | Strategy 2 — no RSI70 exit, no volume filter, wider zones, 5% risk. (V1 removed: over-filtered.) |
 | `strategies/quant-blend/QB_V1.pine` | Strategy 3 — ADX regime + Supertrend + RSI + Bollinger. |
 | `strategies/quant-blend/QB_V2_hybrid.pine` | Strategy 3b — QB regime switch with Donchian trend leg. Wins BTC 4H (CAGR 27.81%). |
+| `strategies/quant-blend/QB_V3.pine` | Strategy 3c — per-asset engine map + ATR chandelier trailing. Tested: per-asset map failed (starves SOL/XAU), chandelier mixed. See QB_V3_AND_PORTFOLIO.md. |
 | `strategies/donchian-breakout/DONCHIAN_V1.pine` | Strategy 4 — pure breakout, hold trend, exit on prior M-low. |
 | `backtest_results/SWEEP_2023_4H.md` | Full 5-strategy × 4-market sweep (2023-26). |
 | `backtest_results/` | Reports + (deleted) scratch screenshots. |
@@ -82,3 +83,10 @@ Swapping QB's trend leg for Donchian flips the camp: BTC 4H **CAGR 27.81%** (PF 
 ETH +18.69% — but breaks SOL (−5.91%). 1D = higher quality / lower CAGR (BTC PF 2.50, DD 9.2%).
 TF matters: 4H for CAGR, 1D for safety; 1D un-breaks SOL (thin sample). No single market+TF hits
 all targets. **Best deployment = Hybrid on BTC/ETH + QB V1 on SOL/XAU (diversified book).**
+
+## QB V3 + Portfolio (backtest_results/QB_V3_AND_PORTFOLIO.md)
+V3 tried per-asset engine map + chandelier trailing. Both inconclusive: per-asset map starves
+SOL/XAU (V1's profit needs its Supertrend trend leg, not generic reversion); chandelier helps ETH,
+hurts BTC. **No single-strategy silver bullet.** Portfolio of specialists (BTC→Hybrid, ETH→V3,
+SOL/XAU→V1) ≈ **16-19% CAGR, DD <15%, PF ~2** (analytical estimate — verify with a Python
+multi-asset backtest before live). To chase 30%: size up the low-DD SOL/XAU sleeves (3-5% DD headroom).

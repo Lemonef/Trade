@@ -1,0 +1,116 @@
+//@version=5
+// ============================================================================
+//  QUANT BLEND V3 — per-asset engine map + ATR chandelier trailing
+//
+//  Lessons folded in:
+//  1. PER-ASSET ENGINE MAP: Donchian trend leg only helps BTC/ETH; it breaks
+//     SOL/XAU. So trend assets (BTC/ETH) use Donchian-in-trend + Bollinger-in-range;
+//     reversion assets (SOL/XAU/other) trade Bollinger reversion only (skip trend regime).
+//  2. ATR CHANDELIER TRAILING exit on the trend leg to cut drawdown / lock trend gains.
+//  3. Long only (shorts always hurt). ATR risk sizing. Date-gated.
+// ============================================================================
+
+strategy("Quant Blend V3", shorttitle="QB V3", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10, commission_type=strategy.commission.percent, commission_value=0.1, slippage=2, pyramiding=0, calc_on_every_tick=false, process_orders_on_close=true)
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+engineMode  = input.string("Auto", "Trend Engine", options=["Auto", "Trend (Donchian)", "Reversion only"], group="Engine Map")
+
+adxLength   = input.int(14, "ADX Length", group="Regime")
+adxTrend    = input.float(25, "ADX Trend Threshold", group="Regime")
+adxRange    = input.float(20, "ADX Range Threshold", group="Regime")
+
+entryPeriod = input.int(20, "Donchian Entry (N-high)", minval=5, group="Trend Leg")
+exitPeriod  = input.int(10, "Donchian Exit (M-low)", minval=3, group="Trend Leg")
+useTrail    = input.bool(true, "ATR Chandelier Trailing", group="Trend Leg")
+trailMult   = input.float(3.0, "Chandelier ATR Mult", minval=1.0, maxval=6.0, step=0.5, group="Trend Leg")
+
+bbLength    = input.int(20, "Bollinger Length", group="Range Leg")
+bbMult      = input.float(2.0, "Bollinger Mult", group="Range Leg")
+rsiLength   = input.int(14, "RSI Length", group="Range Leg")
+rsiOversold = input.float(30, "RSI Oversold", group="Range Leg")
+rsiExit     = input.float(55, "RSI Exit (range leg)", group="Range Leg")
+
+riskPercent = input.float(5.0, "Risk % Per Trade", minval=0.5, maxval=10, step=0.5, group="Risk")
+atrStopMult = input.float(2.5, "ATR Stop Multiplier", minval=1.0, maxval=4.0, step=0.5, group="Risk")
+atrLength   = input.int(14, "ATR Length", group="Risk")
+
+startDate   = input.time(timestamp("01 Jan 2023 00:00 +0000"), "Backtest Start", group="Backtest")
+inDate      = time >= startDate
+
+// ============================================================================
+// ENGINE MAP (which assets get the Donchian trend leg)
+// ============================================================================
+sym = syminfo.ticker
+isTrendAsset = str.contains(sym, "BTC") or str.contains(sym, "ETH")
+useTrendLeg = engineMode == "Auto" ? isTrendAsset : engineMode == "Trend (Donchian)"
+
+// ============================================================================
+// INDICATORS
+// ============================================================================
+[diPlus, diMinus, adx] = ta.dmi(adxLength, adxLength)
+trendingRegime = adx > adxTrend
+rangingRegime  = adx < adxRange
+
+donHigh = ta.highest(high, entryPeriod)
+donLow  = ta.lowest(low, exitPeriod)
+trendEntry = close > donHigh[1]
+trendDonExit = close < donLow[1]
+
+bbBasis = ta.sma(close, bbLength)
+bbDev   = bbMult * ta.stdev(close, bbLength)
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
+rsi     = ta.rsi(close, rsiLength)
+rangeEntry = close <= bbLower and rsi < rsiOversold
+rangeExit  = close >= bbBasis or rsi > rsiExit
+
+atr      = ta.atr(atrLength)
+stopDist = atr * atrStopMult
+riskAmt  = strategy.equity * (riskPercent / 100)
+qty      = stopDist > 0 ? math.min(riskAmt / stopDist, strategy.equity * 0.95 / close) : 0
+
+// ============================================================================
+// EXECUTE (long only)
+// ============================================================================
+var string activeLeg = na
+var float peak = na
+
+longTrend = useTrendLeg and trendingRegime and trendEntry and inDate
+longRange = rangingRegime and rangeEntry and inDate
+
+if strategy.position_size <= 0 and longTrend
+    strategy.entry("L", strategy.long, qty=qty)
+    activeLeg := "trend"
+else if strategy.position_size <= 0 and longRange
+    strategy.entry("L", strategy.long, qty=qty)
+    activeLeg := "range"
+
+// track peak for chandelier
+if strategy.position_size > 0
+    peak := na(peak) ? high : math.max(peak, high)
+else
+    peak := na
+
+chandelier = na(peak) ? na : peak - atr * trailMult
+
+if strategy.position_size > 0
+    trendLegOut = trendDonExit or (useTrail and not na(chandelier) and close < chandelier)
+    legExit = activeLeg == "trend" ? trendLegOut : rangeExit
+    if legExit
+        strategy.close("L", comment="leg exit")
+        activeLeg := na
+    strategy.exit("ATR Stop", "L", stop=strategy.position_avg_price - stopDist)
+
+// ============================================================================
+// VISUALS
+// ============================================================================
+plot(useTrendLeg ? donHigh : na, "Donchian High", color=color.new(color.green, 50))
+plot(useTrendLeg ? donLow : na, "Donchian Low", color=color.new(color.red, 50))
+plot(bbUpper, "BB Upper", color=color.new(color.blue, 60))
+plot(bbLower, "BB Lower", color=color.new(color.blue, 60))
+plot(strategy.position_size > 0 ? chandelier : na, "Chandelier", color=color.new(color.orange, 0), style=plot.style_linebr)
+bgcolor(trendingRegime ? color.new(color.green, 92) : rangingRegime ? color.new(color.orange, 92) : na)
+plotshape(longTrend and strategy.position_size <= 0, "Trend Buy", shape.triangleup, location.belowbar, color.lime, size=size.small)
+plotshape(longRange and strategy.position_size <= 0, "Range Buy", shape.triangleup, location.belowbar, color.aqua, size=size.small)
