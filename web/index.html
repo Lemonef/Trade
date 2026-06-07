@@ -7,30 +7,27 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
   :root{--bg:#0b0e14;--card:#141a24;--line:#222b39;--mut:#8b97a7;--up:#16c784;--dn:#ea3943;--txt:#e8edf3}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);
-    font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif}
   .wrap{max-width:920px;margin:0 auto;padding:24px}
-  h1{font-size:18px;font-weight:600;margin:0 0 2px} .sub{color:var(--mut);font-size:13px;margin-bottom:20px}
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
-  .lbl{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
-  .val{font-size:24px;font-weight:700;margin-top:4px}
-  .ret{font-size:14px;font-weight:600;margin-top:2px}
+  h1{font-size:18px;font-weight:600;margin:0 0 2px} .sub{color:var(--mut);font-size:13px;margin-bottom:16px}
+  .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .tab{background:var(--card);border:1px solid var(--line);color:var(--mut);padding:8px 16px;border-radius:10px;cursor:pointer;font-size:14px}
+  .tab.active{background:#1c2b44;color:#fff;border-color:#3a5180}
   .chartcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
   th{color:var(--mut);font-weight:500;font-size:12px;text-transform:uppercase}
   .mut{color:var(--mut)} .up{color:var(--up)} .dn{color:var(--dn)}
   .pill{display:inline-block;padding:2px 8px;border-radius:20px;background:#1c2531;font-size:12px;color:var(--mut)}
-  @media(max-width:640px){.grid{grid-template-columns:1fr}}
   footer{color:var(--mut);font-size:12px;margin-top:18px;text-align:center}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>QuantBot — Donchian 55/20 + 200-MA basket</h1>
-  <div class="sub">Paper · 20-coin Binance basket · 4h on GitHub Actions · trend + flush-reversion + blend
-    · <span class="pill" id="updated">loading…</span></div>
+  <h1>QuantBot — multi-edge paper book</h1>
+  <div class="sub">20-coin Binance basket · 4h on GitHub Actions · <span class="pill" id="updated">loading…</span></div>
+
+  <div class="tabs" id="tabs"></div>
 
   <div class="chartcard" style="padding:0;overflow:hidden">
     <table>
@@ -38,59 +35,55 @@
       <tbody id="stats"><tr><td colspan="8" class="mut">loading…</td></tr></tbody>
     </table>
   </div>
-
   <div class="chartcard"><canvas id="chart" height="120"></canvas></div>
 
   <div class="chartcard">
     <table>
-      <thead><tr><th>Coin (held)</th><th>Units</th><th>Entry</th><th>Stop</th></tr></thead>
+      <thead><tr><th>Open positions</th><th>Units</th><th>Entry</th><th>Stop</th></tr></thead>
       <tbody id="postable"><tr><td colspan="4" class="mut">loading…</td></tr></tbody>
     </table>
   </div>
-
-  <footer>*CAGR annualized from live equity — noisy until a few months of history. WR/PF/Trades from
-   closed paper trades (0 until first exit). Auto-refresh 5 min · paper only, not financial advice</footer>
+  <footer>*CAGR annualized from live equity (noisy early). Tabs = strategies; rows = leverage.
+   Auto-refresh 5 min · paper only, not financial advice</footer>
 </div>
 
 <script>
-const COLORS = {"trend":"#5b8def","flush":"#16c784","blend 70/30":"#f0a830"};
-const fmt = n => '$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
+const LCOL={"1x":"#5b8def","2x":"#16c784","3x":"#f0a830"};
+const fmt=n=>'$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
+let DATA=null, active=0, chart=null;
+function render(){
+  if(!DATA) return;
+  const tabs=DATA.tabs||[];
+  document.getElementById('tabs').innerHTML=tabs.map((t,i)=>
+    `<div class="tab ${i===active?'active':''}" onclick="sel(${i})">${t.name}</div>`).join('');
+  const tab=tabs[active]; if(!tab) return;
+  document.getElementById('stats').innerHTML=tab.levels.map(L=>{
+    const up=L.pnl_pct>=0;
+    return `<tr><td><b style="color:${LCOL[L.lev]||'#999'}">${L.lev}</b></td>
+      <td>${fmt(L.equity)}</td><td class="${up?'up':'dn'}">${up?'+':''}${L.pnl_pct}%</td>
+      <td>${L.cagr}%</td><td class="dn">${L.maxdd}%</td><td>${L.wr}%</td><td>${L.pf}</td><td>${L.trades}</td></tr>`;
+  }).join('');
+  const labels=(tab.levels[0]?.series||[]).map(r=>r[0]);
+  const ds=tab.levels.map(L=>({label:L.lev,data:L.series.map(r=>r[1]),borderColor:LCOL[L.lev]||'#999',
+    backgroundColor:'transparent',pointRadius:0,borderWidth:2,tension:.25}));
+  if(chart) chart.destroy();
+  chart=new Chart(document.getElementById('chart'),{type:'line',data:{labels,datasets:ds},
+    options:{plugins:{legend:{labels:{color:'#e8edf3'}}},
+      scales:{x:{ticks:{color:'#8b97a7',maxTicksLimit:8},grid:{display:false}},y:{ticks:{color:'#8b97a7'},grid:{color:'#1c2531'}}}}});
+}
+function sel(i){active=i;render();}
 async function load(){
   try{
-    const d = await (await fetch('data.json?ts='+Date.now())).json();
-    document.getElementById('updated').textContent = 'updated '+d.updated+' UTC';
-    // stats table
-    document.getElementById('stats').innerHTML = d.levels.map(L=>{
-      const up = L.pnl_pct>=0;
-      const c = COLORS[L.lev]||'#999';
-      return `<tr>
-        <td><b style="color:${c}">${L.lev}</b></td>
-        <td>${fmt(L.equity)}</td>
-        <td class="${up?'up':'dn'}">${up?'+':''}${L.pnl_pct}%</td>
-        <td>${(L.cagr??0)}%</td>
-        <td class="dn">${(L.maxdd??0)}%</td>
-        <td>${(L.wr??0)}%</td>
-        <td>${(L.pf??0)}</td>
-        <td>${(L.trades??0)}</td></tr>`;
-    }).join('');
-    // positions
+    DATA=await (await fetch('data.json?ts='+Date.now())).json();
+    document.getElementById('updated').textContent='updated '+DATA.updated+' UTC';
     const tb=document.getElementById('postable');
-    tb.innerHTML = d.positions.length ? d.positions.map(o=>
+    tb.innerHTML=DATA.positions.length?DATA.positions.map(o=>
       `<tr><td>${o.coin}</td><td>${o.units}</td><td>${o.entry}</td><td>${o.stop}</td></tr>`).join('')
-      : '<tr><td colspan="4" class="mut">No open positions — holding cash (all coins below 200-MA / no breakout).</td></tr>';
-    // chart: one line per leverage
-    const labels = (d.levels[0]?.series||[]).map(r=>r[0]);
-    const ds = d.levels.map(L=>({label:L.lev, data:L.series.map(r=>r[1]),
-      borderColor:COLORS[L.lev]||'#999', backgroundColor:'transparent',
-      pointRadius:0, borderWidth:2, tension:.25}));
-    new Chart(document.getElementById('chart'),{type:'line',
-      data:{labels,datasets:ds},
-      options:{plugins:{legend:{labels:{color:'#e8edf3'}}},
-        scales:{x:{ticks:{color:'#8b97a7',maxTicksLimit:8},grid:{display:false}},
-                y:{ticks:{color:'#8b97a7'},grid:{color:'#1c2531'}}}}});
-  }catch(e){ document.getElementById('updated').textContent='no data yet — run the bot once'; }
+      :'<tr><td colspan="4" class="mut">No open positions — holding cash.</td></tr>';
+    render();
+  }catch(e){document.getElementById('updated').textContent='no data yet — run the bot once';}
 }
-load(); setInterval(load, 300000);
+load(); setInterval(load,300000);
 </script>
 </body>
 </html>

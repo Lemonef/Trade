@@ -1,37 +1,35 @@
 """
-Paper-trading bot — multi-edge book (deployed). Tracks in parallel, NO REAL MONEY:
-  TREND  - Donchian 55/20 + 200-MA + BTC-master regime, long-only, ATR stop/sizing.
-  FLUSH  - liquidation-flush reversion: buy a coin after a >8% 4h dump that stabilises
-           (knife filter), size by flush magnitude (<=3x), exit on +5% bounce or 4 bars.
-  BLEND  - 70% trend + 30% flush (derived) = the validated book (OOS Sharpe ~1.05, lower DD).
-Each = its own paper account on the 20-coin Binance basket, 4H. Public REST (no key).
-State per strategy in state_*.json; equity in equity_*.csv; web/data.json for the dashboard.
+Paper-trading bot — tabbed multi-edge book. NO REAL MONEY. 20-coin Binance basket, 4H, public REST.
+Accounts tracked in parallel (each its own paper account, $10k):
+  TREND  1x/2x/3x  - Donchian 55/20 + 200-MA + BTC-master regime, ATR stop/sizing
+  FLUSH  1x/2x/3x  - liquidation-flush reversion (>8% dump + stabilise, magnitude size, +5%/4bar exit)
+  BLEND  1x/2x/3x  - derived 70% trend_1x + 30% flush_1x return stream, scaled by leverage
+Dashboard (web/) reads web/data.json -> tabs: Donchian | Flush | Blend, each with its 1/2/3x.
 """
 import sys, os, json, time, csv
 from datetime import datetime, timezone
 from pathlib import Path
 import requests, numpy as np, pandas as pd
 
-HERE = Path(__file__).parent
-COINS = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","LINKUSDT",
-         "LTCUSDT","DOGEUSDT","MATICUSDT","DOTUSDT","ATOMUSDT","NEARUSDT","FILUSDT","UNIUSDT",
-         "ETCUSDT","XLMUSDT","ALGOUSDT","ICPUSDT"]
-INTERVAL="4h"; START_EQUITY=10000.0; COST=0.001+0.0005
-# trend
-ENTRY,EXIT,MA_LEN,ADX_MIN,ATR_LEN,ATR_STOP,RISK_PCT = 55,20,200,25,14,2.5,5.0
-# flush
-FL_THR,FL_CONFIRM,FL_TARGET,FL_MAXBARS,FL_MAXSIZE = -0.08,-0.02,0.05,4,3.0
+HERE=Path(__file__).parent
+COINS=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","LINKUSDT",
+       "LTCUSDT","DOGEUSDT","MATICUSDT","DOTUSDT","ATOMUSDT","NEARUSDT","FILUSDT","UNIUSDT",
+       "ETCUSDT","XLMUSDT","ALGOUSDT","ICPUSDT"]
+INTERVAL="4h"; START=10000.0; COST=0.001+0.0005
+ENTRY,EXIT,MA_LEN,ADX_MIN,ATR_LEN,ATR_STOP,RISK_PCT=55,20,200,25,14,2.5,5.0
+FL_THR,FL_CONFIRM,FL_TARGET,FL_MAXBARS=-0.08,-0.02,0.05,4
+LEVELS=[1,2,3]; STRATS=["trend","flush"]; BLEND_W=(0.7,0.3)
 BASE="https://api.binance.com/api/v3/klines"
-STRATS=["trend","flush"]; BLEND_W={"trend":0.7,"flush":0.3}
-
 TG_TOKEN=os.environ.get("TG_TOKEN",""); TG_CHAT=os.environ.get("TG_CHAT","")
+
 def tg(m):
     if TG_TOKEN and TG_CHAT:
         try: requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",data={"chat_id":TG_CHAT,"text":m},timeout=10)
         except Exception: pass
 def now(): return datetime.now(timezone.utc).isoformat()
-def state_path(st): return HERE/f"state_{st}.json"
-def eqlog_path(st): return HERE/f"equity_{st}.csv"
+def acct(strat,lev): return f"{strat}_{lev}x"
+def spath(a): return HERE/f"state_{a}.json"
+def epath(a): return HERE/f"equity_{a}.csv"
 TRADELOG=HERE/"trades.csv"
 
 def fetch(sym,limit=400):
@@ -48,84 +46,84 @@ def indicators(df):
     adx=rma((100*(pdi-mdi).abs()/(pdi+mdi).replace(0,np.nan)).fillna(0),14)
     return atr,adx,c.rolling(MA_LEN).mean(),h.rolling(ENTRY).max(),l.rolling(EXIT).min()
 
-def load_state(st):
-    p=state_path(st)
+def load_state(a):
+    p=spath(a)
     if p.exists(): return json.loads(p.read_text())
-    sub=START_EQUITY/len(COINS)
+    sub=START/len(COINS)
     return {"coins":{c:{"cash":sub,"units":0.0,"entry":0.0,"stop":0.0,"peak":0.0,"held":0,"size":0.0} for c in COINS}}
 def log_trade(row):
     new=not TRADELOG.exists()
     with open(TRADELOG,"a",newline="") as f:
         w=csv.writer(f)
-        if new: w.writerow(["time","strat","coin","action","price","units","reason","pnl"])
+        if new: w.writerow(["time","acct","coin","action","price","units","reason","pnl"])
         w.writerow(row)
-def append_eq(st,total):
-    p=eqlog_path(st); new=not p.exists()
+def append_eq(a,total):
+    p=epath(a); new=not p.exists()
     with open(p,"a",newline="") as f:
         w=csv.writer(f)
         if new: w.writerow(["time","equity"])
         w.writerow([now(),round(total,2)])
-
-def series_of(stname):
-    p=eqlog_path(stname); out=[]
+def series_of(a):
+    p=epath(a); out=[]
     if p.exists():
         with open(p) as f:
             next(f,None)
             for ln in f:
-                a=ln.strip().split(",")
-                if len(a)==2: out.append([a[0][:16],round(float(a[1]),2)])
+                x=ln.strip().split(",")
+                if len(x)==2: out.append([x[0][:16],round(float(x[1]),2)])
     return out
-def closed_pnls(stname):
+def pnls(a):
     out=[]
     if TRADELOG.exists():
         with open(TRADELOG) as f:
             for row in csv.DictReader(f):
-                if row.get("strat")==stname and row.get("action")=="SELL" and row.get("pnl"):
+                if row.get("acct")==a and row.get("action")=="SELL" and row.get("pnl"):
                     try: out.append(float(row["pnl"]))
                     except ValueError: pass
     return out
-def stat_block(stname, series, total):
-    eqv=[s[1] for s in series]
-    mdd=0.0
-    if len(eqv)>1:
-        peak=eqv[0]
-        for v in eqv: peak=max(peak,v); mdd=min(mdd,v/peak-1)
-    yrs=max(len(eqv),1)/(365*6)
-    cagr=(total/START_EQUITY)**(1/yrs)-1 if yrs>0 and total>0 else 0.0
-    pls=closed_pnls(stname); wins=[x for x in pls if x>0]; los=[x for x in pls if x<=0]
-    wr=len(wins)/len(pls)*100 if pls else 0.0
+def block(name,series,total):
+    ev=[s[1] for s in series]; mdd=0.0
+    if len(ev)>1:
+        pk=ev[0]
+        for v in ev: pk=max(pk,v); mdd=min(mdd,v/pk-1)
+    yrs=max(len(ev),1)/(365*6); cagr=(total/START)**(1/yrs)-1 if yrs>0 and total>0 else 0.0
+    pl=pnls(name); wins=[x for x in pl if x>0]; los=[x for x in pl if x<=0]
+    wr=len(wins)/len(pl)*100 if pl else 0.0
     pf=sum(wins)/abs(sum(los)) if los and sum(los)!=0 else (0.0 if not wins else 999.0)
-    return dict(equity=round(total,2),pnl_pct=round((total/START_EQUITY-1)*100,2),
-                cagr=round(cagr*100,1),maxdd=round(mdd*100,1),wr=round(wr,1),pf=round(pf,2),
-                trades=len(pls),series=series)
+    return dict(equity=round(total,2),pnl_pct=round((total/START-1)*100,2),cagr=round(cagr*100,1),
+                maxdd=round(mdd*100,1),wr=round(wr,1),pf=round(pf,2),trades=len(pl),series=series)
 
-def write_webdata(states, totals):
-    levels=[]
-    for st in STRATS:
-        levels.append({"lev":st, **stat_block(st, series_of(st), totals[st])})
-    # derived blend from per-cycle returns of trend & flush
-    def rets(stname):
-        s=series_of(stname); return [s[i][1]/s[i-1][1]-1 if s[i-1][1] else 0 for i in range(1,len(s))], [r[0] for r in s]
-    tr,tt=rets("trend"); fr,_=rets("flush")
-    blend_series=[]; eqb=START_EQUITY; times=[x[0] for x in series_of("trend")]
-    if tr and fr and len(tr)==len(fr):
-        blend_series.append([times[0] if times else now()[:16], round(eqb,2)])
-        for i in range(len(tr)):
-            eqb*= (1+BLEND_W["trend"]*tr[i]+BLEND_W["flush"]*fr[i])
-            blend_series.append([times[i+1] if i+1<len(times) else now()[:16], round(eqb,2)])
-    levels.append({"lev":"blend 70/30", **stat_block("blend", blend_series, eqb)})
-    s3=states["flush"]
-    positions=[{"coin":c,"units":round(cs["units"],6),"entry":cs["entry"],"stop":round(cs.get("stop",0),6)}
-               for c,cs in states["trend"]["coins"].items() if cs["units"]>0]
-    positions+=[{"coin":c+" (flush)","units":round(cs["units"],6),"entry":cs["entry"],"stop":"+5% / 4bar"}
-                for c,cs in s3["coins"].items() if cs["units"]>0]
-    data={"updated":now()[:16],"start":START_EQUITY,"n_coins":len(COINS),"levels":levels,"positions":positions}
+def write_webdata(totals, states):
+    tabs=[]
+    for strat,label in [("trend","Donchian (trend)"),("flush","Flush reversion")]:
+        levels=[{"lev":f"{L}x", **block(acct(strat,L), series_of(acct(strat,L)), totals[acct(strat,L)])} for L in LEVELS]
+        tabs.append({"name":label,"levels":levels})
+    # derived blend from trend_1x & flush_1x cycle returns
+    ts=series_of("trend_1x"); fs=series_of("flush_1x")
+    blevels=[]
+    if len(ts)>1 and len(ts)==len(fs):
+        times=[r[0] for r in ts]
+        tr=[ts[i][1]/ts[i-1][1]-1 if ts[i-1][1] else 0 for i in range(1,len(ts))]
+        fr=[fs[i][1]/fs[i-1][1]-1 if fs[i-1][1] else 0 for i in range(1,len(fs))]
+        for L in LEVELS:
+            eqb=START; ser=[[times[0],START]]
+            for i in range(len(tr)):
+                eqb*= (1+L*(BLEND_W[0]*tr[i]+BLEND_W[1]*fr[i]))
+                ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
+            blevels.append({"lev":f"{L}x", **block(f"blend_{L}x", ser, eqb)})
+    else:
+        blevels=[{"lev":f"{L}x", **block(f"blend_{L}x", [], START)} for L in LEVELS]
+    tabs.append({"name":"Blend 70/30","levels":blevels})
+    pos=[{"coin":c,"units":round(cs["units"],6),"entry":cs["entry"],"stop":round(cs.get("stop",0),6)}
+         for c,cs in states["trend_1x"]["coins"].items() if cs["units"]>0]
+    pos+=[{"coin":c+" (flush)","units":round(cs["units"],6),"entry":cs["entry"],"stop":"+5%/4bar"}
+          for c,cs in states["flush_1x"]["coins"].items() if cs["units"]>0]
+    data={"updated":now()[:16],"start":START,"n_coins":len(COINS),"tabs":tabs,"positions":pos}
     web=HERE.parent/"web"; web.mkdir(exist_ok=True); (web/"data.json").write_text(json.dumps(data),encoding="utf-8")
 
 def cycle():
-    states={st:load_state(st) for st in STRATS}
-    totals={st:0.0 for st in STRATS}; actions=[]
-    # BTC master regime for trend
+    accts=[acct(s,L) for s in STRATS for L in LEVELS]
+    states={a:load_state(a) for a in accts}; totals={a:0.0 for a in accts}; actions=[]
     try:
         bdf=fetch("BTCUSDT"); _,_,bma,_,_=indicators(bdf); bi=len(bdf)-2; btc_ok=bool(bdf.c.iloc[bi]>bma.iloc[bi])
     except Exception: btc_ok=True
@@ -133,46 +131,53 @@ def cycle():
         try: df=fetch(c)
         except Exception as e:
             print(f"{c}: fetch fail {e}")
-            for st in STRATS: totals[st]+=states[st]["coins"][c]["cash"]
+            for a in accts: totals[a]+=states[a]["coins"][c]["cash"]
             continue
         atr,adx,ma,donHi,donLo=indicators(df); i=len(df)-2
-        price,low,high,a=df.c.iloc[i],df.l.iloc[i],df.h.iloc[i],atr.iloc[i]
+        price,low,high,av=df.c.iloc[i],df.l.iloc[i],df.h.iloc[i],atr.iloc[i]
         r_prev=df.c.iloc[i-1]/df.c.iloc[i-2]-1 if i>=2 else 0.0
         r_now=df.c.iloc[i]/df.c.iloc[i-1]-1 if i>=1 else 0.0
-        # ---- TREND ----
-        cs=states["trend"]["coins"][c]
-        if cs["units"]>0:
-            cs["peak"]=max(cs["peak"],high)
-            if price<donLo.iloc[i-1] or low<cs["stop"]:
-                pnl=cs["units"]*price*(1-COST)-cs["units"]*cs["entry"]*(1+COST); cs["cash"]+=cs["units"]*price*(1-COST)
-                log_trade([now(),"trend",c,"SELL",round(price,6),round(cs["units"],6),"exit",round(pnl,2)]); actions.append(f"trend {c} EXIT")
-                cs.update(units=0.0,entry=0.0,stop=0.0,peak=0.0)
-        elif price>donHi.iloc[i-1] and adx.iloc[i]>ADX_MIN and price>ma.iloc[i] and btc_ok and a>0:
-            sd=a*ATR_STOP; u=(cs["cash"]*RISK_PCT/100)/sd; u=min(u,cs["cash"]*0.95/price)
-            if u>0:
-                cs["cash"]-=u*price*(1+COST); cs.update(units=u,entry=price,stop=price-sd,peak=high)
-                log_trade([now(),"trend",c,"BUY",round(price,6),round(u,6),"breakout",""]); actions.append(f"trend {c} BUY")
-        totals["trend"]+=cs["cash"]+cs["units"]*price
-        # ---- FLUSH ----
-        fs=states["flush"]["coins"][c]
-        if fs["units"]>0:
-            if high/fs["entry"]-1>=FL_TARGET or fs["held"]>=FL_MAXBARS:
-                pnl=fs["units"]*price*(1-COST)-fs["units"]*fs["entry"]*(1+COST); fs["cash"]+=fs["units"]*price*(1-COST)
-                log_trade([now(),"flush",c,"SELL",round(price,6),round(fs["units"],6),"bounce/timeout",round(pnl,2)]); actions.append(f"flush {c} EXIT")
-                fs.update(units=0.0,entry=0.0,held=0,size=0.0)
-            else: fs["held"]+=1
-        elif r_prev<FL_THR and r_now>FL_CONFIRM:
-            size=min(FL_MAXSIZE,abs(r_prev)/0.10)
-            u=size*fs["cash"]*0.95/price
-            if u>0:
-                fs["cash"]-=u*price*(1+COST); fs.update(units=u,entry=price,held=1,size=size)
-                log_trade([now(),"flush",c,"BUY",round(price,6),round(u,6),f"flush {r_prev*100:.0f}%",""]); actions.append(f"flush {c} BUY")
-        totals["flush"]+=fs["cash"]+fs["units"]*price
-    for st in STRATS:
-        states[st]["last_run"]=now(); states[st]["equity"]=round(totals[st],2)
-        state_path(st).write_text(json.dumps(states[st],indent=2)); append_eq(st,totals[st])
-    write_webdata(states,totals)
-    summ=" | ".join(f"{st} ${totals[st]:,.0f}" for st in STRATS)+(f" | {', '.join(actions)}" if actions else " | no trades")
+        trend_buy=price>donHi.iloc[i-1] and adx.iloc[i]>ADX_MIN and price>ma.iloc[i] and btc_ok and av>0
+        trend_exit=price<donLo.iloc[i-1]
+        flush_buy=r_prev<FL_THR and r_now>FL_CONFIRM
+        for L in LEVELS:
+            # trend
+            cs=states[acct("trend",L)]["coins"][c]
+            if cs["units"]>0:
+                cs["peak"]=max(cs["peak"],high)
+                if trend_exit or low<cs["stop"]:
+                    pnl=cs["units"]*price*(1-COST)-cs["units"]*cs["entry"]*(1+COST); cs["cash"]+=cs["units"]*price*(1-COST)
+                    log_trade([now(),acct("trend",L),c,"SELL",round(price,6),round(cs["units"],6),"exit",round(pnl,2)])
+                    if L==1: actions.append(f"trend {c} EXIT")
+                    cs.update(units=0.0,entry=0.0,stop=0.0,peak=0.0)
+            elif trend_buy:
+                sd=av*ATR_STOP; u=L*(cs["cash"]*RISK_PCT/100)/sd; u=min(u,cs["cash"]*0.95*L/price)
+                if u>0:
+                    cs["cash"]-=u*price*(1+COST); cs.update(units=u,entry=price,stop=price-sd,peak=high)
+                    log_trade([now(),acct("trend",L),c,"BUY",round(price,6),round(u,6),"breakout",""])
+                    if L==1: actions.append(f"trend {c} BUY")
+            totals[acct("trend",L)]+=cs["cash"]+cs["units"]*price
+            # flush
+            fs=states[acct("flush",L)]["coins"][c]
+            if fs["units"]>0:
+                if high/fs["entry"]-1>=FL_TARGET or fs["held"]>=FL_MAXBARS:
+                    pnl=fs["units"]*price*(1-COST)-fs["units"]*fs["entry"]*(1+COST); fs["cash"]+=fs["units"]*price*(1-COST)
+                    log_trade([now(),acct("flush",L),c,"SELL",round(price,6),round(fs["units"],6),"bounce/timeout",round(pnl,2)])
+                    if L==1: actions.append(f"flush {c} EXIT")
+                    fs.update(units=0.0,entry=0.0,held=0,size=0.0)
+                else: fs["held"]+=1
+            elif flush_buy:
+                size=min(3.0,abs(r_prev)/0.10); u=L*size*fs["cash"]*0.95/price
+                if u>0:
+                    fs["cash"]-=u*price*(1+COST); fs.update(units=u,entry=price,held=1,size=size)
+                    log_trade([now(),acct("flush",L),c,"BUY",round(price,6),round(u,6),f"flush {r_prev*100:.0f}%",""])
+                    if L==1: actions.append(f"flush {c} BUY")
+            totals[acct("flush",L)]+=fs["cash"]+fs["units"]*price
+    for a in accts:
+        states[a]["last_run"]=now(); states[a]["equity"]=round(totals[a],2)
+        spath(a).write_text(json.dumps(states[a],indent=2)); append_eq(a,totals[a])
+    write_webdata(totals,states)
+    summ=f"trend1x ${totals['trend_1x']:,.0f} flush1x ${totals['flush_1x']:,.0f}"+(f" | {', '.join(actions)}" if actions else " | no trades")
     tg("PaperBot "+summ); print(f"{now()}  {summ}")
 
 if __name__=="__main__":
