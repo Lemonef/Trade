@@ -88,17 +88,23 @@ def pnls(a):
                     try: out.append(float(row["pnl"]))
                     except ValueError: pass
     return out
-def block(name,series,total):
+def block(name,series,total,derived=False):
     ev=[s[1] for s in series]; mdd=0.0
     if len(ev)>1:
         pk=ev[0]
         for v in ev: pk=max(pk,v); mdd=min(mdd,v/pk-1)
     yrs=max(len(ev),1)/(365*6); cagr=(total/START)**(1/yrs)-1 if yrs>0 and total>0 else 0.0
+    # Sharpe from per-cycle (4h) equity returns, annualised (6 cycles/day)
+    sh=0.0
+    if len(ev)>3:
+        rr=np.array([ev[i]/ev[i-1]-1 for i in range(1,len(ev)) if ev[i-1]])
+        if len(rr)>2 and rr.std()>0: sh=float(rr.mean()/rr.std()*np.sqrt(6*365))
     pl=pnls(name); wins=[x for x in pl if x>0]; los=[x for x in pl if x<=0]
     wr=len(wins)/len(pl)*100 if pl else 0.0
     pf=sum(wins)/abs(sum(los)) if los and sum(los)!=0 else (0.0 if not wins else 999.0)
     return dict(equity=round(total,2),pnl_pct=round((total/START-1)*100,2),cagr=round(cagr*100,1),
-                maxdd=round(mdd*100,1),wr=round(wr,1),pf=round(pf,2),trades=len(pl),series=series)
+                maxdd=round(mdd*100,1),sharpe=round(sh,2),wr=round(wr,1),pf=round(pf,2),
+                trades=len(pl),derived=derived,series=series)
 
 def read_regime():
     out=[]
@@ -112,7 +118,7 @@ def read_regime():
                     except ValueError: pass
     return out
 
-def write_webdata(totals, states):
+def write_webdata(totals, states, btc_ok=True):
     tabs=[]
     for strat,label in [("trend","Donchian (trend)"),("flush","Flush reversion"),("crashreb","Crashreb (BTC-crash bounce)")]:
         levels=[{"lev":f"{L}x", **block(acct(strat,L), series_of(acct(strat,L)), totals[acct(strat,L)])} for L in LEVELS]
@@ -129,9 +135,9 @@ def write_webdata(totals, states):
             for i in range(len(tr)):
                 eqb*=(1+L*(BLEND_W[0]*tr[i]+BLEND_W[1]*fr[i]))
                 ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
-            blevels.append({"lev":f"{L}x", **block(f"blend_{L}x", ser, eqb)})
+            blevels.append({"lev":f"{L}x", **block(f"blend_{L}x", ser, eqb, derived=True)})
     else:
-        blevels=[{"lev":f"{L}x", **block(f"blend_{L}x", [], START)} for L in LEVELS]
+        blevels=[{"lev":f"{L}x", **block(f"blend_{L}x", [], START, derived=True)} for L in LEVELS]
     tabs.append({"name":"Blend 70/30 (original)","levels":blevels})
     # BOOK V2: .55 trend + .25 flush + .20 crashreb, scaled x0.3 when BTC<200MA (the upgrade).
     # crashreb starts fresh (shorter history) -> align all three on their common TAIL length.
@@ -147,9 +153,9 @@ def write_webdata(totals, states):
                 mult = 1.0 if bull else BEAR_MULT
                 eqb*=(1+L*mult*(BOOK_W[0]*tr[i]+BOOK_W[1]*fr[i]+BOOK_W[2]*xr[i]))
                 ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
-            v2.append({"lev":f"{L}x", **block(f"bookv2_{L}x", ser, eqb)})
+            v2.append({"lev":f"{L}x", **block(f"bookv2_{L}x", ser, eqb, derived=True)})
     else:
-        v2=[{"lev":f"{L}x", **block(f"bookv2_{L}x", [], START)} for L in LEVELS]
+        v2=[{"lev":f"{L}x", **block(f"bookv2_{L}x", [], START, derived=True)} for L in LEVELS]
     tabs.append({"name":"Book v2 (upgraded ★)","levels":v2})
     pos=[{"coin":c,"units":round(cs["units"],6),"entry":cs["entry"],"stop":round(cs.get("stop",0),6)}
          for c,cs in states["trend_1x"]["coins"].items() if cs["units"]>0]
@@ -157,7 +163,10 @@ def write_webdata(totals, states):
           for c,cs in states["flush_1x"]["coins"].items() if cs["units"]>0]
     pos+=[{"coin":c+" (crashreb)","units":round(cs["units"],6),"entry":cs["entry"],"stop":"+5%/3bar"}
           for c,cs in states["crashreb_1x"]["coins"].items() if cs["units"]>0]
-    data={"updated":now()[:16],"start":START,"n_coins":len(COINS),"tabs":tabs,"positions":pos}
+    total_trades=sum(L["trades"] for t in tabs for L in t["levels"])
+    data={"updated":now()[:16],"start":START,"n_coins":len(COINS),"tabs":tabs,"positions":pos,
+          "regime":"bull" if btc_ok else "bear","bookv2_exposure":1.0 if btc_ok else BEAR_MULT,
+          "total_trades":total_trades}
     web=HERE.parent/"web"; web.mkdir(exist_ok=True); (web/"data.json").write_text(json.dumps(data),encoding="utf-8")
 
 def cycle():
@@ -242,7 +251,7 @@ def cycle():
     for a in accts:
         states[a]["last_run"]=now(); states[a]["equity"]=round(totals[a],2)
         spath(a).write_text(json.dumps(states[a],indent=2)); append_eq(a,totals[a])
-    write_webdata(totals,states)
+    write_webdata(totals,states,btc_ok)
     summ=f"trend1x ${totals['trend_1x']:,.0f} flush1x ${totals['flush_1x']:,.0f} crashreb1x ${totals['crashreb_1x']:,.0f}"+(f" | {', '.join(actions)}" if actions else " | no trades")
     tg("PaperBot "+summ); print(f"{now()}  {summ}")
 
