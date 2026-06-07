@@ -1,13 +1,11 @@
 """
-Paper-trading bot for the validated strategy:
+Paper-trading bot — validated strategy, tracking 1x / 2x / 3x leverage in parallel.
   Donchian 55/20 breakout + 200-MA filter, long-only, ATR stop, ATR-risk sizing.
-  ~20-coin Binance basket, 4H. Each coin = its own equal-capital sub-account (mirrors backtest).
+  ~20-coin Binance basket, 4H, each coin = equal-capital sub-account.
+Signals are identical across leverages; only position size differs -> one fetch, 3 accounts.
 
-NO REAL MONEY. Fetches Binance klines via public REST (no API key). Persists state to state.json,
-appends equity to equity_log.csv. Run once per 4H bar (cron / Task Scheduler) or with --loop.
-
-  python paper_bot.py            # run one cycle
-  python paper_bot.py --loop     # run forever, cycle every 4h
+NO REAL MONEY. Public Binance REST (no key). Persists state_{1,2,3}x.json + equity_{1,2,3}x.csv,
+writes web/data.json for the dashboard. Run once per 4H (GitHub Actions) or --loop.
 """
 import sys, os, json, time, csv
 from datetime import datetime, timezone
@@ -15,59 +13,45 @@ from pathlib import Path
 import requests, numpy as np, pandas as pd
 
 HERE = Path(__file__).parent
-STATE = HERE / "state.json"
-EQLOG = HERE / "equity_log.csv"
-TRADELOG = HERE / "trades.csv"
 
-# ---- config (matches validated core) ----
+# ---- config ----
 COINS = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","LINKUSDT",
          "LTCUSDT","DOGEUSDT","MATICUSDT","DOTUSDT","ATOMUSDT","NEARUSDT","FILUSDT","UNIUSDT",
          "ETCUSDT","XLMUSDT","ALGOUSDT","ICPUSDT"]
+LEVELS     = [1.0, 2.0, 3.0]   # leverages tracked in parallel
 INTERVAL   = "4h"
-ENTRY      = 55       # Donchian high
-EXIT       = 20       # Donchian low
-MA_LEN     = 200
-ADX_MIN    = 25
-ATR_LEN    = 14
+ENTRY, EXIT = 55, 20
+MA_LEN, ADX_MIN, ATR_LEN = 200, 25, 14
 ATR_STOP   = 2.5
 RISK_PCT   = 5.0
-LEVERAGE   = 3.0      # aggressive (≈full-Kelly): ~50-57% DD expected. 1.0 safe, 2.0 = half-Kelly sweet spot
 START_EQUITY = 10000.0
-COST = 0.001 + 0.0005 # commission + slippage per side
+COST = 0.001 + 0.0005
 BASE = "https://api.binance.com/api/v3/klines"
 
-# ---- Telegram alerts (optional) ----
-# 1) message @BotFather -> /newbot -> copy the token below
-# 2) message your new bot once, then open
-#    https://api.telegram.org/bot<TOKEN>/getUpdates  -> copy "chat":{"id":NUMBER}
-TG_TOKEN = os.environ.get("TG_TOKEN", "")   # or paste bot token here ("...")
-TG_CHAT  = os.environ.get("TG_CHAT", "")    # or paste your chat id here ("...")
-
+TG_TOKEN = os.environ.get("TG_TOKEN", "")
+TG_CHAT  = os.environ.get("TG_CHAT", "")
 def tg(msg):
-    if not TG_TOKEN or not TG_CHAT:
-        return
-    try:
-        requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-                      data={"chat_id": TG_CHAT, "text": msg}, timeout=10)
-    except Exception:
-        pass
+    if not TG_TOKEN or not TG_CHAT: return
+    try: requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                       data={"chat_id": TG_CHAT, "text": msg}, timeout=10)
+    except Exception: pass
 
+def now(): return datetime.now(timezone.utc).isoformat()
+def tag(lev): return f"{int(lev)}x"
+def state_path(lev): return HERE/f"state_{tag(lev)}.json"
+def eqlog_path(lev): return HERE/f"equity_{tag(lev)}.csv"
+TRADELOG = HERE/"trades.csv"
 
 def fetch(sym, limit=400):
     r = requests.get(BASE, params={"symbol": sym, "interval": INTERVAL, "limit": limit}, timeout=20)
     r.raise_for_status()
-    d = r.json()
-    df = pd.DataFrame(d, columns=["t","o","h","l","c","v","ct","q","n","tb","tq","ig"])
-    for x in ["o","h","l","c"]:
-        df[x] = df[x].astype(float)
+    df = pd.DataFrame(r.json(), columns=["t","o","h","l","c","v","ct","q","n","tb","tq","ig"])
+    for x in ["o","h","l","c"]: df[x] = df[x].astype(float)
     return df
 
-
 def rma(s, n): return s.ewm(alpha=1/n, adjust=False).mean()
-
 def indicators(df):
-    h,l,c = df.h, df.l, df.c
-    pc = c.shift()
+    h,l,c = df.h, df.l, df.c; pc = c.shift()
     tr = pd.concat([h-l,(h-pc).abs(),(l-pc).abs()],axis=1).max(axis=1)
     atr = rma(tr, ATR_LEN)
     up = h.diff(); dn = -l.diff()
@@ -77,101 +61,91 @@ def indicators(df):
     mdi = 100*rma(pd.Series(minus,index=df.index),14)/atrx.replace(0,np.nan)
     dx = 100*(pdi-mdi).abs()/(pdi+mdi).replace(0,np.nan)
     adx = rma(dx.fillna(0),14)
-    ma = c.rolling(MA_LEN).mean()
-    donHi = h.rolling(ENTRY).max()
-    donLo = l.rolling(EXIT).min()
-    return atr, adx, ma, donHi, donLo
+    return atr, adx, c.rolling(MA_LEN).mean(), h.rolling(ENTRY).max(), l.rolling(EXIT).min()
 
-
-def load_state():
-    if STATE.exists():
-        return json.loads(STATE.read_text())
+def load_state(lev):
+    p = state_path(lev)
+    if p.exists(): return json.loads(p.read_text())
     sub = START_EQUITY/len(COINS)
-    return {"created": now(), "coins": {c: {"cash": sub, "units": 0.0, "entry": 0.0,
-            "stop": 0.0, "peak": 0.0} for c in COINS}}
-
-def save_state(s): STATE.write_text(json.dumps(s, indent=2))
-def now(): return datetime.now(timezone.utc).isoformat()
+    return {"coins": {c: {"cash": sub, "units": 0.0, "entry": 0.0, "stop": 0.0, "peak": 0.0} for c in COINS}}
 
 def log_trade(row):
     new = not TRADELOG.exists()
     with open(TRADELOG,"a",newline="") as f:
         w=csv.writer(f)
-        if new: w.writerow(["time","coin","action","price","units","sub_equity","reason"])
+        if new: w.writerow(["time","lev","coin","action","price","units","reason"])
         w.writerow(row)
 
-
-def write_webdata(st, total):
-    # compact JSON the hosted dashboard reads
-    series = []
-    if EQLOG.exists():
-        with open(EQLOG) as f:
-            next(f, None)
-            for line in f:
-                p = line.strip().split(",")
-                if len(p) == 2:
-                    series.append([p[0][:16], round(float(p[1]), 2)])
-    positions = [{"coin": c, "units": round(cs["units"], 6), "entry": cs["entry"], "stop": cs["stop"]}
-                 for c, cs in st["coins"].items() if cs["units"] > 0]
-    data = {"updated": now()[:16], "equity": round(total, 2),
-            "pnl_pct": round((total/START_EQUITY-1)*100, 2),
-            "start": START_EQUITY, "leverage": LEVERAGE,
-            "n_coins": len(COINS), "positions": positions, "series": series}
-    web = HERE.parent / "web"
-    web.mkdir(exist_ok=True)
-    (web / "data.json").write_text(json.dumps(data), encoding="utf-8")
-
-
-def cycle():
-    st = load_state()
-    total = 0.0; actions = []
-    for c in COINS:
-        cs = st["coins"][c]
-        try:
-            df = fetch(c)
-        except Exception as e:
-            print(f"{c}: fetch fail {e}");
-            total += cs["cash"] + cs["units"]*0  # can't mark; skip
-            continue
-        atr,adx,ma,donHi,donLo = indicators(df)
-        i = len(df)-2          # last CLOSED bar (last row is still forming)
-        price = df.c.iloc[i]; low = df.l.iloc[i]; high = df.h.iloc[i]
-        a = atr.iloc[i]
-        sub_eq = cs["cash"] + cs["units"]*price
-
-        if cs["units"] > 0:    # manage open position
-            cs["peak"] = max(cs["peak"], high)
-            exit_now = (price < donLo.iloc[i-1]) or (low < cs["stop"])
-            if exit_now:
-                cs["cash"] += cs["units"]*price*(1-COST)
-                log_trade([now(),c,"SELL",round(price,6),round(cs["units"],6),round(cs["cash"],2),"exit"])
-                actions.append(f"{c} EXIT @ {price:.4f}")
-                cs.update(units=0.0, entry=0.0, stop=0.0, peak=0.0)
-        else:                  # look for entry
-            breakout = price > donHi.iloc[i-1] and adx.iloc[i] > ADX_MIN and price > ma.iloc[i]
-            if breakout and a > 0:
-                stop_dist = a*ATR_STOP
-                units = LEVERAGE*(cs["cash"]*RISK_PCT/100)/stop_dist
-                units = min(units, cs["cash"]*0.95*LEVERAGE/price)
-                if units > 0:
-                    cs["cash"] -= units*price*(1+COST)
-                    cs.update(units=units, entry=price, stop=price-stop_dist, peak=high)
-                    log_trade([now(),c,"BUY",round(price,6),round(units,6),round(cs["cash"],2),"breakout"])
-                    actions.append(f"{c} BUY @ {price:.4f}")
-        total += cs["cash"] + cs["units"]*price
-    st["last_run"] = now(); st["equity"] = round(total,2)
-    save_state(st)
-    new = not EQLOG.exists()
-    with open(EQLOG,"a",newline="") as f:
+def append_eq(lev, total):
+    p = eqlog_path(lev); new = not p.exists()
+    with open(p,"a",newline="") as f:
         w=csv.writer(f)
         if new: w.writerow(["time","equity"])
         w.writerow([now(), round(total,2)])
-    write_webdata(st, total)
-    summary = f"PaperBot ${total:,.2f} ({(total/START_EQUITY-1)*100:+.1f}%) | " + (", ".join(actions) if actions else "no trades")
-    tg(summary)
-    print(f"{now()}  {summary}")
-    return total
 
+def write_webdata(states, totals):
+    levels = []
+    for lev in LEVELS:
+        series = []
+        p = eqlog_path(lev)
+        if p.exists():
+            with open(p) as f:
+                next(f, None)
+                for line in f:
+                    a = line.strip().split(",")
+                    if len(a)==2: series.append([a[0][:16], round(float(a[1]),2)])
+        levels.append({"lev": tag(lev), "equity": round(totals[lev],2),
+                       "pnl_pct": round((totals[lev]/START_EQUITY-1)*100,2), "series": series})
+    s3 = states[LEVELS[-1]]   # positions: same coins across levels; show units at 3x
+    positions = [{"coin": c, "units": round(cs["units"],6), "entry": cs["entry"], "stop": cs["stop"]}
+                 for c, cs in s3["coins"].items() if cs["units"] > 0]
+    data = {"updated": now()[:16], "start": START_EQUITY, "n_coins": len(COINS),
+            "levels": levels, "positions": positions}
+    web = HERE.parent/"web"; web.mkdir(exist_ok=True)
+    (web/"data.json").write_text(json.dumps(data), encoding="utf-8")
+
+def cycle():
+    states = {lev: load_state(lev) for lev in LEVELS}
+    totals = {lev: 0.0 for lev in LEVELS}
+    actions = []
+    for c in COINS:
+        try: df = fetch(c)
+        except Exception as e:
+            print(f"{c}: fetch fail {e}")
+            for lev in LEVELS: totals[lev] += states[lev]["coins"][c]["cash"]
+            continue
+        atr,adx,ma,donHi,donLo = indicators(df)
+        i = len(df)-2
+        price, low, high, a = df.c.iloc[i], df.l.iloc[i], df.h.iloc[i], atr.iloc[i]
+        breakout = price > donHi.iloc[i-1] and adx.iloc[i] > ADX_MIN and price > ma.iloc[i]
+        breakdown = price < donLo.iloc[i-1]
+        for lev in LEVELS:
+            cs = states[lev]["coins"][c]
+            if cs["units"] > 0:
+                cs["peak"] = max(cs["peak"], high)
+                if breakdown or low < cs["stop"]:
+                    cs["cash"] += cs["units"]*price*(1-COST)
+                    log_trade([now(),tag(lev),c,"SELL",round(price,6),round(cs["units"],6),"exit"])
+                    if lev==LEVELS[-1]: actions.append(f"{c} EXIT")
+                    cs.update(units=0.0, entry=0.0, stop=0.0, peak=0.0)
+            elif breakout and a > 0:
+                sd = a*ATR_STOP
+                units = lev*(cs["cash"]*RISK_PCT/100)/sd
+                units = min(units, cs["cash"]*0.95*lev/price)
+                if units > 0:
+                    cs["cash"] -= units*price*(1+COST)
+                    cs.update(units=units, entry=price, stop=price-sd, peak=high)
+                    log_trade([now(),tag(lev),c,"BUY",round(price,6),round(units,6),"breakout"])
+                    if lev==LEVELS[-1]: actions.append(f"{c} BUY")
+            totals[lev] += cs["cash"] + cs["units"]*price
+    for lev in LEVELS:
+        states[lev]["last_run"]=now(); states[lev]["equity"]=round(totals[lev],2)
+        state_path(lev).write_text(json.dumps(states[lev], indent=2))
+        append_eq(lev, totals[lev])
+    write_webdata(states, totals)
+    summ = " | ".join(f"{tag(lev)} ${totals[lev]:,.0f}" for lev in LEVELS) + \
+           (f" | {', '.join(actions)}" if actions else " | no trades")
+    tg("PaperBot " + summ); print(f"{now()}  {summ}")
 
 if __name__ == "__main__":
     if "--loop" in sys.argv:
