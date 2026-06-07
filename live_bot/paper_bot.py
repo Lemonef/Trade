@@ -73,7 +73,7 @@ def log_trade(row):
     new = not TRADELOG.exists()
     with open(TRADELOG,"a",newline="") as f:
         w=csv.writer(f)
-        if new: w.writerow(["time","lev","coin","action","price","units","reason"])
+        if new: w.writerow(["time","lev","coin","action","price","units","reason","pnl"])
         w.writerow(row)
 
 def append_eq(lev, total):
@@ -82,6 +82,27 @@ def append_eq(lev, total):
         w=csv.writer(f)
         if new: w.writerow(["time","equity"])
         w.writerow([now(), round(total,2)])
+
+def closed_pnls(levtag):
+    out = []
+    if TRADELOG.exists():
+        with open(TRADELOG) as f:
+            r = csv.DictReader(f)
+            for row in r:
+                if row.get("lev")==levtag and row.get("action")=="SELL" and row.get("pnl"):
+                    try: out.append(float(row["pnl"]))
+                    except ValueError: pass
+    return out
+
+def stats_from_series(series):
+    if len(series) < 2: return 0.0, 0.0
+    eq = [s[1] for s in series]
+    peak = eq[0]; mdd = 0.0
+    for v in eq:
+        peak = max(peak, v); mdd = min(mdd, v/peak - 1)
+    years = len(eq) / (365*6)   # one point per ~4h cycle
+    cagr = (eq[-1]/eq[0])**(1/years) - 1 if years > 0 and eq[-1] > 0 else 0.0
+    return cagr*100, mdd*100
 
 def write_webdata(states, totals):
     levels = []
@@ -94,8 +115,16 @@ def write_webdata(states, totals):
                 for line in f:
                     a = line.strip().split(",")
                     if len(a)==2: series.append([a[0][:16], round(float(a[1]),2)])
+        cagr, mdd = stats_from_series(series)
+        pls = closed_pnls(tag(lev))
+        wins = [x for x in pls if x > 0]; losses = [x for x in pls if x <= 0]
+        wr = (len(wins)/len(pls)*100) if pls else 0.0
+        pf = (sum(wins)/abs(sum(losses))) if losses and sum(losses)!=0 else (0.0 if not wins else 999.0)
         levels.append({"lev": tag(lev), "equity": round(totals[lev],2),
-                       "pnl_pct": round((totals[lev]/START_EQUITY-1)*100,2), "series": series})
+                       "pnl_pct": round((totals[lev]/START_EQUITY-1)*100,2),
+                       "cagr": round(cagr,1), "maxdd": round(mdd,1),
+                       "wr": round(wr,1), "pf": round(pf,2), "trades": len(pls),
+                       "series": series})
     s3 = states[LEVELS[-1]]   # positions: same coins across levels; show units at 3x
     positions = [{"coin": c, "units": round(cs["units"],6), "entry": cs["entry"], "stop": cs["stop"]}
                  for c, cs in s3["coins"].items() if cs["units"] > 0]
@@ -124,8 +153,9 @@ def cycle():
             if cs["units"] > 0:
                 cs["peak"] = max(cs["peak"], high)
                 if breakdown or low < cs["stop"]:
+                    pnl = cs["units"]*price*(1-COST) - cs["units"]*cs["entry"]*(1+COST)
                     cs["cash"] += cs["units"]*price*(1-COST)
-                    log_trade([now(),tag(lev),c,"SELL",round(price,6),round(cs["units"],6),"exit"])
+                    log_trade([now(),tag(lev),c,"SELL",round(price,6),round(cs["units"],6),"exit",round(pnl,2)])
                     if lev==LEVELS[-1]: actions.append(f"{c} EXIT")
                     cs.update(units=0.0, entry=0.0, stop=0.0, peak=0.0)
             elif breakout and a > 0:
@@ -135,7 +165,7 @@ def cycle():
                 if units > 0:
                     cs["cash"] -= units*price*(1+COST)
                     cs.update(units=units, entry=price, stop=price-sd, peak=high)
-                    log_trade([now(),tag(lev),c,"BUY",round(price,6),round(units,6),"breakout"])
+                    log_trade([now(),tag(lev),c,"BUY",round(price,6),round(units,6),"breakout",""])
                     if lev==LEVELS[-1]: actions.append(f"{c} BUY")
             totals[lev] += cs["cash"] + cs["units"]*price
     for lev in LEVELS:

@@ -32,7 +32,12 @@
   <div class="sub">Paper · 20-coin Binance basket · 4h on GitHub Actions · tracking 1× / 2× / 3× side by side
     · <span class="pill" id="updated">loading…</span></div>
 
-  <div class="grid" id="cards"></div>
+  <div class="chartcard" style="padding:0;overflow:hidden">
+    <table>
+      <thead><tr><th>Leverage</th><th>Equity</th><th>Return</th><th>CAGR*</th><th>Max DD</th><th>Win%</th><th>PF</th><th>Trades</th></tr></thead>
+      <tbody id="stats"><tr><td colspan="8" class="mut">loading…</td></tr></tbody>
+    </table>
+  </div>
 
   <div class="chartcard"><canvas id="chart" height="120"></canvas></div>
 
@@ -43,7 +48,8 @@
     </table>
   </div>
 
-  <footer>Auto-refresh 5 min · data from <code>data.json</code> · paper only, not financial advice</footer>
+  <footer>*CAGR annualized from live equity — noisy until a few months of history. WR/PF/Trades from
+   closed paper trades (0 until first exit). Auto-refresh 5 min · paper only, not financial advice</footer>
 </div>
 
 <script>
@@ -53,12 +59,19 @@ async function load(){
   try{
     const d = await (await fetch('data.json?ts='+Date.now())).json();
     document.getElementById('updated').textContent = 'updated '+d.updated+' UTC';
-    // cards
-    document.getElementById('cards').innerHTML = d.levels.map(L=>{
+    // stats table
+    document.getElementById('stats').innerHTML = d.levels.map(L=>{
       const up = L.pnl_pct>=0;
-      return `<div class="card"><div class="lbl">Equity ${L.lev}</div>
-        <div class="val">${fmt(L.equity)}</div>
-        <div class="ret ${up?'up':'dn'}">${up?'+':''}${L.pnl_pct}%</div></div>`;
+      const c = COLORS[L.lev]||'#999';
+      return `<tr>
+        <td><b style="color:${c}">${L.lev}</b></td>
+        <td>${fmt(L.equity)}</td>
+        <td class="${up?'up':'dn'}">${up?'+':''}${L.pnl_pct}%</td>
+        <td>${(L.cagr??0)}%</td>
+        <td class="dn">${(L.maxdd??0)}%</td>
+        <td>${(L.wr??0)}%</td>
+        <td>${(L.pf??0)}</td>
+        <td>${(L.trades??0)}</td></tr>`;
     }).join('');
     // positions
     const tb=document.getElementById('postable');
