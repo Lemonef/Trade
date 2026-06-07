@@ -3,11 +3,12 @@
 Automated trading strategy R&D. Owner: Zen (19, Thai uni student). Capital ~$2,800
 (100k Baht). Goal: 20M Baht by early 30s. Fully automated only. High risk tolerance.
 
-## Infrastructure (live)
-- **TradingView** paper trading: Gold 1D + SOL 1D (Trend Meter Long Only). Account: sudha_sutaschuto.
-- **MT5 Demo**: Exness #413853078, XAUUSD D1, EA running.
-- **Azure VPS**: 52.184.100.141, Win Server 2022, free ~Dec 2026 (GitHub Student credits).
-- Languages: Pine Script v5 + MQL5.
+## Infrastructure
+- **TradingView** paper trading (Gold/SOL, Trend Meter Long Only).
+- **MT5 Demo** (Exness) for XAUUSD.
+- **Hosting:** GitHub Actions (cloud, free) runs the paper bot every 4h. (Azure student VPS retired.)
+- Languages: Pine Script v5 + MQL5 + Python.
+- (Personal account numbers/IPs kept out of this public repo.)
 
 ## Files (folder per strategy; all Pine v5, mq5 removed)
 | File | What |
@@ -51,7 +52,7 @@ earlier one was a bug. Momentum (TSMOM/combo) gets Sharpe ~1 too but DD 60-75% (
 - **Best market: SOL 4H** (momentum + clear trends).
 - Dead markets: ETH, EURUSD, Nasdaq, Gold. EURUSD totally incompatible (7% WR).
 
-## Backtest workflow (TradingView via agent-browser) — Account: sudha_sutaschuto
+## Backtest workflow (TradingView via agent-browser)
 1. Browser **headed** (`--headed --profile "Profile 2"`) so Zen sees it. Google OAuth is blocked
    on automation Chrome → log in with TradingView **Email**, not "Continue with Google".
 2. Pine Editor → paste code via clipboard (`Set-Clipboard` + click editor, Ctrl+A, Delete, Ctrl+V).

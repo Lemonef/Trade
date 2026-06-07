@@ -29,4 +29,4 @@ Fully automated. See [[CLAUDE]] for full project spec + backtest workflow.
 → A market-aware meta-strategy (route by regime/asset) is the obvious next experiment.
 
 ## Infra
-- TradingView (acct sudha_sutaschuto) · MT5 Exness #413853078 · Azure VPS 52.184.100.141
+- TradingView (paper) · MT5 Exness demo · GitHub Actions (cloud bot)

@@ -36,6 +36,6 @@ jobs:
         run: |
           git config user.name  "paper-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add -f live_bot/state.json live_bot/equity_log.csv live_bot/trades.csv live_bot/dashboard.html
+          git add -f live_bot/state.json live_bot/equity_log.csv live_bot/trades.csv live_bot/dashboard.html web/data.json
           git commit -m "paper-bot run $(date -u +%FT%TZ)" || echo "no changes"
           git push || echo "nothing to push"

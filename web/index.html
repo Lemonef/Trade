@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuantBot — Live Paper Trading</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  :root{--bg:#0b0e14;--card:#141a24;--line:#222b39;--mut:#8b97a7;--up:#16c784;--dn:#ea3943;--txt:#e8edf3}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:900px;margin:0 auto;padding:24px}
+  h1{font-size:18px;font-weight:600;margin:0 0 2px} .sub{color:var(--mut);font-size:13px;margin-bottom:20px}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .lbl{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .val{font-size:24px;font-weight:700;margin-top:4px}
+  .chartcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:500;font-size:12px;text-transform:uppercase}
+  .mut{color:var(--mut)} .up{color:var(--up)} .dn{color:var(--dn)}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;background:#1c2531;font-size:12px;color:var(--mut)}
+  @media(max-width:640px){.grid{grid-template-columns:repeat(2,1fr)}}
+  footer{color:var(--mut);font-size:12px;margin-top:18px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>QuantBot — Donchian 55/20 + 200-MA basket</h1>
+  <div class="sub">Paper trading · 20-coin Binance basket · runs every 4h on GitHub Actions
+    · <span class="pill" id="updated">loading…</span></div>
+
+  <div class="grid">
+    <div class="card"><div class="lbl">Equity</div><div class="val" id="equity">—</div></div>
+    <div class="card"><div class="lbl">Return</div><div class="val" id="pnl">—</div></div>
+    <div class="card"><div class="lbl">Open positions</div><div class="val" id="npos">—</div></div>
+    <div class="card"><div class="lbl">Leverage</div><div class="val" id="lev">—</div></div>
+  </div>
+
+  <div class="chartcard"><canvas id="chart" height="110"></canvas></div>
+
+  <div class="chartcard">
+    <table>
+      <thead><tr><th>Coin</th><th>Units</th><th>Entry</th><th>Stop</th></tr></thead>
+      <tbody id="postable"><tr><td colspan="4" class="mut">loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <footer>Auto-refreshes every 5 min · data from <code>data.json</code> · paper only, not financial advice</footer>
+</div>
+
+<script>
+const fmt = n => '$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
+async function load(){
+  try{
+    const d = await (await fetch('data.json?ts='+Date.now())).json();
+    document.getElementById('equity').textContent = fmt(d.equity);
+    const up = d.pnl_pct >= 0;
+    const p = document.getElementById('pnl');
+    p.textContent = (up?'+':'')+d.pnl_pct+'%'; p.className = 'val '+(up?'up':'dn');
+    document.getElementById('npos').textContent = d.positions.length;
+    document.getElementById('lev').textContent = d.leverage+'x';
+    document.getElementById('updated').textContent = 'updated '+d.updated+' UTC';
+    const tb = document.getElementById('postable');
+    tb.innerHTML = d.positions.length ? d.positions.map(o=>
+      `<tr><td>${o.coin}</td><td>${o.units}</td><td>${o.entry}</td><td>${o.stop}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="mut">No open positions — holding cash (all coins below 200-MA / no breakout).</td></tr>';
+    const labels = d.series.map(r=>r[0]), eq = d.series.map(r=>r[1]);
+    const col = up ? '#16c784' : '#ea3943';
+    new Chart(document.getElementById('chart'),{type:'line',
+      data:{labels,datasets:[{data:eq,borderColor:col,backgroundColor:'rgba(22,199,132,.08)',
+        fill:true,pointRadius:0,borderWidth:2,tension:.25}]},
+      options:{plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:'#8b97a7',maxTicksLimit:8},grid:{display:false}},
+                y:{ticks:{color:'#8b97a7'},grid:{color:'#1c2531'}}}}});
+  }catch(e){ document.getElementById('updated').textContent='no data yet — run the bot once'; }
+}
+load(); setInterval(load, 300000);
+</script>
+</body>
+</html>

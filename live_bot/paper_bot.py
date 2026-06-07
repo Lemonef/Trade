@@ -145,6 +145,27 @@ options:{{plugins:{{legend:{{display:false}}}},scales:{{x:{{ticks:{{color:'#888'
     (HERE/"dashboard.html").write_text(html, encoding="utf-8")
 
 
+def write_webdata(st, total):
+    # compact JSON the hosted dashboard reads
+    series = []
+    if EQLOG.exists():
+        with open(EQLOG) as f:
+            next(f, None)
+            for line in f:
+                p = line.strip().split(",")
+                if len(p) == 2:
+                    series.append([p[0][:16], round(float(p[1]), 2)])
+    positions = [{"coin": c, "units": round(cs["units"], 6), "entry": cs["entry"], "stop": cs["stop"]}
+                 for c, cs in st["coins"].items() if cs["units"] > 0]
+    data = {"updated": now()[:16], "equity": round(total, 2),
+            "pnl_pct": round((total/START_EQUITY-1)*100, 2),
+            "start": START_EQUITY, "leverage": LEVERAGE,
+            "n_coins": len(COINS), "positions": positions, "series": series}
+    web = HERE.parent / "web"
+    web.mkdir(exist_ok=True)
+    (web / "data.json").write_text(json.dumps(data), encoding="utf-8")
+
+
 def cycle():
     st = load_state()
     total = 0.0; actions = []
@@ -190,6 +211,7 @@ def cycle():
         if new: w.writerow(["time","equity"])
         w.writerow([now(), round(total,2)])
     write_dashboard(st, total)
+    write_webdata(st, total)
     summary = f"PaperBot ${total:,.2f} ({(total/START_EQUITY-1)*100:+.1f}%) | " + (", ".join(actions) if actions else "no trades")
     tg(summary)
     print(f"{now()}  {summary}")
