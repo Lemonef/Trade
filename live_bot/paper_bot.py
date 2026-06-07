@@ -21,7 +21,7 @@ COINS=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","L
        "ETCUSDT","XLMUSDT","ALGOUSDT","ICPUSDT"]
 INTERVAL="4h"; START=10000.0; COST=0.001+0.0005
 ENTRY,EXIT,MA_LEN,ADX_MIN,ATR_LEN,ATR_STOP,RISK_PCT=55,20,200,25,14,4.0,5.0  # ATR_STOP 2.5->4.0: tight stop whipsawed (bear-validated: FULL Sh 1.42->1.49, DD 18%->14%, 2022 -12.7%->-7.7%)
-FL_THR,FL_CONFIRM,FL_TARGET,FL_MAXBARS=-0.08,-0.02,0.05,4
+FL_THR,FL_CONFIRM,FL_TARGET,FL_MAXBARS=-0.08,-0.02,0.05,2  # FL_MAXBARS 4->2: capitulation bounces are fast (FULL Sh 0.82->0.90, DD 22%->15.6%, better both OOS halves)
 CR_THR,CR_TARGET,CR_MAXBARS=-0.05,0.05,3            # crashreb: BTC<-5% bar -> buy alts, +5%/3bar exit
 LEVELS=[1,2,3]; STRATS=["trend","flush","crashreb"]; BLEND_W=(0.7,0.3)
 BOOK_W=(0.55,0.25,0.20); BEAR_MULT=0.3              # Book v2 weights + bear-regime exposure scale
@@ -159,7 +159,7 @@ def write_webdata(totals, states, btc_ok=True):
     tabs.append({"name":"Book v2 (upgraded ★)","levels":v2})
     pos=[{"coin":c,"units":round(cs["units"],6),"entry":cs["entry"],"stop":round(cs.get("stop",0),6)}
          for c,cs in states["trend_1x"]["coins"].items() if cs["units"]>0]
-    pos+=[{"coin":c+" (flush)","units":round(cs["units"],6),"entry":cs["entry"],"stop":"+5%/4bar"}
+    pos+=[{"coin":c+" (flush)","units":round(cs["units"],6),"entry":cs["entry"],"stop":"+5%/2bar"}
           for c,cs in states["flush_1x"]["coins"].items() if cs["units"]>0]
     pos+=[{"coin":c+" (crashreb)","units":round(cs["units"],6),"entry":cs["entry"],"stop":"+5%/3bar"}
           for c,cs in states["crashreb_1x"]["coins"].items() if cs["units"]>0]
