@@ -32,6 +32,16 @@ Manual alternatives:
 - `LEVERAGE = 1.0` → set `2.0` for the aggressive sweet spot (≈half-Kelly; ~2× CAGR & DD).
 - `RISK_PCT`, `ATR_STOP`, `ENTRY/EXIT`, `MA_LEN`, `COINS` — all editable.
 
+## Tracking
+- **`track.bat`** — double-click → shows signals + equity (status.py), stays open.
+- **Web dashboard** — every cycle writes `dashboard.html` (equity chart + positions). Open it in a
+  browser. `serve.bat` serves it at http://localhost:8080/dashboard.html (open port 8080 in Azure
+  NSG for remote access).
+- **Telegram alerts** — set `TG_TOKEN` + `TG_CHAT` at the top of `paper_bot.py`:
+  1. Telegram → message **@BotFather** → `/newbot` → copy the token.
+  2. Message your new bot once, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` → copy the
+     `chat":{"id":NUMBER`. Paste both. Bot then DMs you equity + trades each 4h cycle.
+
 ## How to read it
 - **All coins below 200-MA → 0 positions, 100% cash.** Correct: the strategy sits out downtrends.
 - It buys a coin when: closes above its 55-bar high **and** ADX>25 **and** price>200-MA.

@@ -10,6 +10,7 @@ __pycache__/
 live_bot/state.json
 live_bot/*.csv
 live_bot/*.log
+live_bot/dashboard.html
 
 # OS / editor cruft
 Thumbs.db
