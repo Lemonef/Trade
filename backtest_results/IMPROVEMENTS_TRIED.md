@@ -43,6 +43,18 @@ OOS Sharpe rose 0.61 → 0.94, CAGR up, DD down, bear less bad — all from dive
 fixed rules (not adding parameters). This is the legit way to lift the curve. Leveraged: 20-coin
 base at 2x ≈ 35% CAGR / 38% DD / Sharpe 0.94; 3x ≈ 52% / 57%. Better frontier than the 10-coin one.
 
+## Tried the "real quant" alphas too (carry, multi-factor) — failed in these implementations
+| Sleeve | FULL Sharpe | OOS | Note |
+|---|---|---|---|
+| Funding carry (long spot/short perp) | degenerate | −19 | net funding ≈ 0 after costs; 2022 funding negative; stats broke |
+| Multi-factor L/S (mom+lowvol+carry) | −0.77 | −1.27 | blew up (−55% CAGR, 98% DD) with short costs |
+| trend+carry / trend+factor / all-3 | — | NEGATIVE OOS | every ensemble worse OOS than trend alone |
+
+Honest caveat: these are *crude* implementations. Real desks model carry (proper funding capture,
+basis, only-on costs) and factors (neutralisation, risk model) far more carefully — my quick versions
+don't prove the edges are worthless, only that a naive build doesn't help. The robust, validated
+answer remains the **trend core**.
+
 ## Recommendation
 Run the **core (Donchian55/20 + MA200, basket)** at the leverage matching your DD tolerance, add a
 **small Long/Short sleeve as a bear hedge** (optional), and consider **universe expansion** as the
