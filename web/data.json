@@ -1,1 +1,1 @@
-{"updated": "2026-06-07T09:53", "equity": 10000.0, "pnl_pct": 0.0, "start": 10000.0, "leverage": 3.0, "n_coins": 20, "positions": [], "series": [["2026-06-07T09:53", 10000.0]]}
+{"updated": "2026-06-07T10:08", "start": 10000.0, "n_coins": 20, "levels": [{"lev": "1x", "equity": 10000.0, "pnl_pct": 0.0, "series": [["2026-06-07T10:08", 10000.0]]}, {"lev": "2x", "equity": 10000.0, "pnl_pct": 0.0, "series": [["2026-06-07T10:08", 10000.0]]}, {"lev": "3x", "equity": 10000.0, "pnl_pct": 0.0, "series": [["2026-06-07T10:08", 10000.0]]}], "positions": []}
