@@ -1,10 +1,14 @@
 """
 Paper-trading bot — tabbed multi-edge book. NO REAL MONEY. 20-coin Binance basket, 4H, public REST.
 Accounts tracked in parallel (each its own paper account, $10k):
-  TREND  1x/2x/3x  - Donchian 55/20 + 200-MA + BTC-master regime, ATR stop/sizing
-  FLUSH  1x/2x/3x  - liquidation-flush reversion (>8% dump + stabilise, magnitude size, +5%/4bar exit)
-  BLEND  1x/2x/3x  - derived 70% trend_1x + 30% flush_1x return stream, scaled by leverage
-Dashboard (web/) reads web/data.json -> tabs: Donchian | Flush | Blend, each with its 1/2/3x.
+  TREND    1x/2x/3x  - Donchian 55/20 + 200-MA + BTC-master regime, ATR stop/sizing
+  FLUSH    1x/2x/3x  - liquidation-flush reversion (>8% dump + stabilise, magnitude size, +5%/4bar exit)
+  CRASHREB 1x/2x/3x  - BTC-crash rebound: BTC dumps >5% in a 4h bar -> buy ALL alts, +5%/3bar exit
+  BLEND    1x/2x/3x  - derived 70% trend_1x + 30% flush_1x (the ORIGINAL deployed book — kept)
+  BOOK V2  1x/2x/3x  - derived .55 trend + .25 flush + .20 crashreb, scaled x0.3 when BTC<200MA
+                       (the UPGRADED book: backtest OOS Sharpe 1.05->1.57, DD 12.9%->7.2%)
+Dashboard (web/) reads web/data.json -> tabs: Donchian | Flush | Crashreb | Blend 70/30 | Book v2.
+Old tabs kept intact for live comparison; Book v2 is the new recommended system.
 """
 import sys, os, json, time, csv
 from datetime import datetime, timezone
@@ -18,7 +22,10 @@ COINS=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","L
 INTERVAL="4h"; START=10000.0; COST=0.001+0.0005
 ENTRY,EXIT,MA_LEN,ADX_MIN,ATR_LEN,ATR_STOP,RISK_PCT=55,20,200,25,14,2.5,5.0
 FL_THR,FL_CONFIRM,FL_TARGET,FL_MAXBARS=-0.08,-0.02,0.05,4
-LEVELS=[1,2,3]; STRATS=["trend","flush"]; BLEND_W=(0.7,0.3)
+CR_THR,CR_TARGET,CR_MAXBARS=-0.05,0.05,3            # crashreb: BTC<-5% bar -> buy alts, +5%/3bar exit
+LEVELS=[1,2,3]; STRATS=["trend","flush","crashreb"]; BLEND_W=(0.7,0.3)
+BOOK_W=(0.55,0.25,0.20); BEAR_MULT=0.3              # Book v2 weights + bear-regime exposure scale
+REGLOG=HERE/"regime_log.csv"
 BASE="https://api.binance.com/api/v3/klines"
 TG_TOKEN=os.environ.get("TG_TOKEN",""); TG_CHAT=os.environ.get("TG_CHAT","")
 
@@ -93,39 +100,74 @@ def block(name,series,total):
     return dict(equity=round(total,2),pnl_pct=round((total/START-1)*100,2),cagr=round(cagr*100,1),
                 maxdd=round(mdd*100,1),wr=round(wr,1),pf=round(pf,2),trades=len(pl),series=series)
 
+def read_regime():
+    out=[]
+    if REGLOG.exists():
+        with open(REGLOG) as f:
+            next(f,None)
+            for ln in f:
+                x=ln.strip().split(",")
+                if len(x)==2:
+                    try: out.append(int(x[1]))
+                    except ValueError: pass
+    return out
+
 def write_webdata(totals, states):
     tabs=[]
-    for strat,label in [("trend","Donchian (trend)"),("flush","Flush reversion")]:
+    for strat,label in [("trend","Donchian (trend)"),("flush","Flush reversion"),("crashreb","Crashreb (BTC-crash bounce)")]:
         levels=[{"lev":f"{L}x", **block(acct(strat,L), series_of(acct(strat,L)), totals[acct(strat,L)])} for L in LEVELS]
         tabs.append({"name":label,"levels":levels})
-    # derived blend from trend_1x & flush_1x cycle returns
-    ts=series_of("trend_1x"); fs=series_of("flush_1x")
+    # cycle return streams from the three 1x sleeves
+    ts=series_of("trend_1x"); fs=series_of("flush_1x"); xs=series_of("crashreb_1x"); reglog=read_regime()
+    def rets(ser): return [ser[i][1]/ser[i-1][1]-1 if ser[i-1][1] else 0 for i in range(1,len(ser))]
+    # ORIGINAL blend 70/30 (kept)
     blevels=[]
     if len(ts)>1 and len(ts)==len(fs):
-        times=[r[0] for r in ts]
-        tr=[ts[i][1]/ts[i-1][1]-1 if ts[i-1][1] else 0 for i in range(1,len(ts))]
-        fr=[fs[i][1]/fs[i-1][1]-1 if fs[i-1][1] else 0 for i in range(1,len(fs))]
+        times=[r[0] for r in ts]; tr=rets(ts); fr=rets(fs)
         for L in LEVELS:
             eqb=START; ser=[[times[0],START]]
             for i in range(len(tr)):
-                eqb*= (1+L*(BLEND_W[0]*tr[i]+BLEND_W[1]*fr[i]))
+                eqb*=(1+L*(BLEND_W[0]*tr[i]+BLEND_W[1]*fr[i]))
                 ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
             blevels.append({"lev":f"{L}x", **block(f"blend_{L}x", ser, eqb)})
     else:
         blevels=[{"lev":f"{L}x", **block(f"blend_{L}x", [], START)} for L in LEVELS]
-    tabs.append({"name":"Blend 70/30","levels":blevels})
+    tabs.append({"name":"Blend 70/30 (original)","levels":blevels})
+    # BOOK V2: .55 trend + .25 flush + .20 crashreb, scaled x0.3 when BTC<200MA (the upgrade).
+    # crashreb starts fresh (shorter history) -> align all three on their common TAIL length.
+    v2=[]
+    k=min(len(ts),len(fs),len(xs))
+    if k>1:
+        tsk,fsk,xsk=ts[-k:],fs[-k:],xs[-k:]; regk=reglog[-k:] if len(reglog)>=k else reglog
+        times=[r[0] for r in tsk]; tr=rets(tsk); fr=rets(fsk); xr=rets(xsk)
+        for L in LEVELS:
+            eqb=START; ser=[[times[0],START]]
+            for i in range(len(tr)):
+                bull = regk[i+1] if i+1<len(regk) else (regk[-1] if regk else 1)
+                mult = 1.0 if bull else BEAR_MULT
+                eqb*=(1+L*mult*(BOOK_W[0]*tr[i]+BOOK_W[1]*fr[i]+BOOK_W[2]*xr[i]))
+                ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
+            v2.append({"lev":f"{L}x", **block(f"bookv2_{L}x", ser, eqb)})
+    else:
+        v2=[{"lev":f"{L}x", **block(f"bookv2_{L}x", [], START)} for L in LEVELS]
+    tabs.append({"name":"Book v2 (upgraded ★)","levels":v2})
     pos=[{"coin":c,"units":round(cs["units"],6),"entry":cs["entry"],"stop":round(cs.get("stop",0),6)}
          for c,cs in states["trend_1x"]["coins"].items() if cs["units"]>0]
     pos+=[{"coin":c+" (flush)","units":round(cs["units"],6),"entry":cs["entry"],"stop":"+5%/4bar"}
           for c,cs in states["flush_1x"]["coins"].items() if cs["units"]>0]
+    pos+=[{"coin":c+" (crashreb)","units":round(cs["units"],6),"entry":cs["entry"],"stop":"+5%/3bar"}
+          for c,cs in states["crashreb_1x"]["coins"].items() if cs["units"]>0]
     data={"updated":now()[:16],"start":START,"n_coins":len(COINS),"tabs":tabs,"positions":pos}
     web=HERE.parent/"web"; web.mkdir(exist_ok=True); (web/"data.json").write_text(json.dumps(data),encoding="utf-8")
 
 def cycle():
     accts=[acct(s,L) for s in STRATS for L in LEVELS]
     states={a:load_state(a) for a in accts}; totals={a:0.0 for a in accts}; actions=[]
+    btc_crash=False; btc_r_prev=0.0
     try:
         bdf=fetch("BTCUSDT"); _,_,bma,_,_=indicators(bdf); bi=len(bdf)-2; btc_ok=bool(bdf.c.iloc[bi]>bma.iloc[bi])
+        btc_r_prev=bdf.c.iloc[bi-1]/bdf.c.iloc[bi-2]-1 if bi>=2 else 0.0
+        btc_crash=bool(btc_r_prev<CR_THR)            # BTC dumped >5% on the prior bar -> rebound entry
     except Exception: btc_ok=True
     for c in COINS:
         try: df=fetch(c)
@@ -173,11 +215,35 @@ def cycle():
                     log_trade([now(),acct("flush",L),c,"BUY",round(price,6),round(u,6),f"flush {r_prev*100:.0f}%",""])
                     if L==1: actions.append(f"flush {c} BUY")
             totals[acct("flush",L)]+=fs["cash"]+fs["units"]*price
+            # crashreb (BTC-wide crash -> buy alts; BTC itself excluded)
+            xs=states[acct("crashreb",L)]["coins"][c]
+            if xs["units"]>0:
+                if high/xs["entry"]-1>=CR_TARGET or xs["held"]>=CR_MAXBARS:
+                    pnl=xs["units"]*price*(1-COST)-xs["units"]*xs["entry"]*(1+COST); xs["cash"]+=xs["units"]*price*(1-COST)
+                    log_trade([now(),acct("crashreb",L),c,"SELL",round(price,6),round(xs["units"],6),"bounce/timeout",round(pnl,2)])
+                    if L==1: actions.append(f"crashreb {c} EXIT")
+                    xs.update(units=0.0,entry=0.0,held=0,size=0.0)
+                else: xs["held"]+=1
+            elif btc_crash and c!="BTCUSDT":
+                u=L*xs["cash"]*0.95/price
+                if u>0:
+                    xs["cash"]-=u*price*(1+COST); xs.update(units=u,entry=price,held=1,size=1.0)
+                    log_trade([now(),acct("crashreb",L),c,"BUY",round(price,6),round(u,6),f"BTC crash {btc_r_prev*100:.0f}%",""])
+                    if L==1: actions.append(f"crashreb {c} BUY")
+            totals[acct("crashreb",L)]+=xs["cash"]+xs["units"]*price
+    # log master regime this cycle (for Book v2 bear-scaling reconstruction)
+    try:
+        rnew=not REGLOG.exists()
+        with open(REGLOG,"a",newline="") as f:
+            w=csv.writer(f)
+            if rnew: w.writerow(["time","btc_ok"])
+            w.writerow([now(),int(btc_ok)])
+    except Exception: pass
     for a in accts:
         states[a]["last_run"]=now(); states[a]["equity"]=round(totals[a],2)
         spath(a).write_text(json.dumps(states[a],indent=2)); append_eq(a,totals[a])
     write_webdata(totals,states)
-    summ=f"trend1x ${totals['trend_1x']:,.0f} flush1x ${totals['flush_1x']:,.0f}"+(f" | {', '.join(actions)}" if actions else " | no trades")
+    summ=f"trend1x ${totals['trend_1x']:,.0f} flush1x ${totals['flush_1x']:,.0f} crashreb1x ${totals['crashreb_1x']:,.0f}"+(f" | {', '.join(actions)}" if actions else " | no trades")
     tg("PaperBot "+summ); print(f"{now()}  {summ}")
 
 if __name__=="__main__":

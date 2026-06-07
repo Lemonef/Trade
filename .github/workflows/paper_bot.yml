@@ -36,7 +36,7 @@ jobs:
         run: |
           git config user.name  "paper-bot"
           git config user.email "bot@users.noreply.github.com"
-          for f in live_bot/state_*.json live_bot/equity_*.csv live_bot/trades.csv web/data.json; do
+          for f in live_bot/state_*.json live_bot/equity_*.csv live_bot/trades.csv live_bot/regime_log.csv web/data.json; do
             [ -f "$f" ] && git add -f "$f"
           done
           git commit -m "paper-bot run $(date -u +%FT%TZ)" || echo "no changes"
