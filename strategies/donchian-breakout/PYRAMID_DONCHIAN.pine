@@ -26,6 +26,7 @@ adxThresh   = input.float(25, "ADX min", group="Filters")
 useMktFilter= input.bool(true, "Only long above 200-MA (skip bears)", group="Filters")
 maLen       = input.int(200, "Market MA length", group="Filters")
 maxUnits    = input.int(3, "Max pyramid units", minval=1, maxval=8, group="Pyramid")
+leverage    = input.float(1.0, "Leverage (1/2/3x)", options=[1.0,2.0,3.0], group="Risk")
 riskPercent = input.float(5.0, "Risk % per unit", minval=0.5, maxval=10, step=0.5, group="Risk")
 atrStopMult = input.float(2.5, "ATR stop mult", minval=1.0, maxval=4.0, step=0.5, group="Risk")
 atrLen      = input.int(14, "ATR length", group="Risk")
@@ -45,11 +46,11 @@ breakout = close > donHi[1] and adxOK and mktOK and inDate
 breakdown = close < donLo[1]
 
 stopDist = atr * atrStopMult
-unitQty = stopDist > 0 ? (strategy.equity * riskPercent / 100) / stopDist : 0
+unitQty = stopDist > 0 ? leverage * (strategy.equity * riskPercent / 100) / stopDist : 0
 
 // Entry: pyramiding via strategy() pyramiding=N + maxUnits guard
 if breakout and strategy.opentrades < maxUnits
-    notionalCap = strategy.equity * 0.95 / close
+    notionalCap = strategy.equity * 0.95 * leverage / close
     q = math.min(unitQty, math.max(0, notionalCap - strategy.position_size))
     if q > 0
         strategy.entry("L" + str.tostring(strategy.opentrades), strategy.long, qty=q)
