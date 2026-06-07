@@ -29,7 +29,7 @@
 <body>
 <div class="wrap">
   <h1>QuantBot — Donchian 55/20 + 200-MA basket</h1>
-  <div class="sub">Paper · 20-coin Binance basket · 4h on GitHub Actions · tracking 1× / 2× / 3× side by side
+  <div class="sub">Paper · 20-coin Binance basket · 4h on GitHub Actions · trend + flush-reversion + blend
     · <span class="pill" id="updated">loading…</span></div>
 
   <div class="chartcard" style="padding:0;overflow:hidden">
@@ -43,7 +43,7 @@
 
   <div class="chartcard">
     <table>
-      <thead><tr><th>Coin (held)</th><th>Units @3×</th><th>Entry</th><th>Stop</th></tr></thead>
+      <thead><tr><th>Coin (held)</th><th>Units</th><th>Entry</th><th>Stop</th></tr></thead>
       <tbody id="postable"><tr><td colspan="4" class="mut">loading…</td></tr></tbody>
     </table>
   </div>
@@ -53,7 +53,7 @@
 </div>
 
 <script>
-const COLORS = {"1x":"#5b8def","2x":"#16c784","3x":"#f0a830"};
+const COLORS = {"trend":"#5b8def","flush":"#16c784","blend 70/30":"#f0a830"};
 const fmt = n => '$'+Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
 async function load(){
   try{

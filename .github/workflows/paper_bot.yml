@@ -36,10 +36,13 @@ jobs:
         run: |
           git config user.name  "paper-bot"
           git config user.email "bot@users.noreply.github.com"
-          for f in live_bot/state_1x.json live_bot/state_2x.json live_bot/state_3x.json \
-                   live_bot/equity_1x.csv live_bot/equity_2x.csv live_bot/equity_3x.csv \
+          for f in live_bot/state_trend.json live_bot/state_flush.json \
+                   live_bot/equity_trend.csv live_bot/equity_flush.csv \
                    live_bot/trades.csv web/data.json; do
             [ -f "$f" ] && git add -f "$f"
           done
+          # remove stale leverage-era files if present
+          git rm -q --ignore-unmatch live_bot/state_1x.json live_bot/state_2x.json live_bot/state_3x.json \
+                   live_bot/equity_1x.csv live_bot/equity_2x.csv live_bot/equity_3x.csv 2>/dev/null || true
           git commit -m "paper-bot run $(date -u +%FT%TZ)" || echo "no changes"
           git push || echo "nothing to push"

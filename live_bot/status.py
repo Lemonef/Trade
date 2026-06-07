@@ -4,7 +4,7 @@ from pathlib import Path
 import paper_bot as b
 
 HERE=Path(__file__).parent
-sp = HERE/"state_3x.json"
+sp = HERE/"state_trend.json"
 st = json.loads(sp.read_text()) if sp.exists() else {"coins":{}}
 print(f"{'coin':9s} {'price':>11s} {'>MA200':>7s} {'ADX':>5s} {'55-high':>11s} {'to brk%':>8s} {'pos':>6s}")
 for c in b.COINS:
@@ -17,7 +17,7 @@ for c in b.COINS:
     tobrk = (brk/price-1)*100
     pos=st["coins"].get(c,{}).get("units",0)
     print(f"{c:9s} {price:>11.4f} {('yes' if above else 'no'):>7s} {adx.iloc[i]:>5.1f} {brk:>11.4f} {tobrk:>7.2f}% {('LONG' if pos>0 else '-'):>6s}")
-for lev in b.LEVELS:
-    p=HERE/f"state_{int(lev)}x.json"
+for st in b.STRATS:
+    p=HERE/f"state_{st}.json"
     if p.exists():
-        s=json.loads(p.read_text()); print(f"  {int(lev)}x equity: ${s.get('equity','?')}")
+        s=json.loads(p.read_text()); print(f"  {st} equity: ${s.get('equity','?')}")
