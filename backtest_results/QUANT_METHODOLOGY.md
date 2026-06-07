@@ -43,6 +43,21 @@ plateau around 28. Not a single lucky parameter.
    This matches the literature — sustainable Sharpe ~1-1.5 is "good"; advertised triple-digit CAGR
    crypto bots are overfit or bull-only.
 
+## Walk-forward validation (the decisive overfit test)
+Rolled train 12mo → pick best-Sharpe param → test next 3mo OOS → step 3mo, 17 folds, stitched.
+| Method | CAGR | DD | Sharpe |
+|---|---|---|---|
+| Walk-forward OOS (re-optimized each fold) | 14.4% | 24% | 0.75 |
+| **Fixed 55/20 + MA200 (no re-opt)** | 17.0% | 23% | **0.86** |
+| WF OOS @ 2x / 3x | 25% / 31% | 43% / 60% | 0.75 |
+
+Findings:
+1. **Real edge, not overfit** — survives rolling OOS at Sharpe ~0.75-0.86.
+2. **Re-optimizing each window (0.75) < fixing simple params (0.86)** — adaptive picks chase noise
+   (chosen entry jumped 20→40→55→40 across folds). **Simpler beats adaptive.** → use fixed 55/20.
+3. Honest forward expectation: **Sharpe ~0.8, ~17% CAGR at 1x**; 30% needs ~3x (≈60% DD). The
+   full-cycle Sharpe 1.14 was inflated by the 2021 bull being in-sample.
+
 ## Recommended path forward (pro playbook)
 - **Core**: Donchian + MA-200 filter basket, ~1.0-1.5x → 25-37% CAGR, DD 20-29%, Sharpe ~1.1.
   Hits the original targets (CAGR 30%+ at 1.5x, Sharpe>0.8, PF>1.5) and survives bear.
