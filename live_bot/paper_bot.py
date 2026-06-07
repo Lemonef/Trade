@@ -101,50 +101,6 @@ def log_trade(row):
         w.writerow(row)
 
 
-def write_dashboard(st, total):
-    # read equity history
-    times, eqs = [], []
-    if EQLOG.exists():
-        with open(EQLOG) as f:
-            next(f, None)
-            for line in f:
-                p = line.strip().split(",")
-                if len(p) == 2:
-                    times.append(p[0][:16]); eqs.append(p[1])
-    # open positions table
-    rows = ""
-    for c, cs in st["coins"].items():
-        if cs["units"] > 0:
-            rows += f"<tr><td>{c}</td><td>{cs['units']:.4f}</td><td>{cs['entry']:.4f}</td><td>{cs['stop']:.4f}</td></tr>"
-    if not rows:
-        rows = "<tr><td colspan=4 style='text-align:center;color:#888'>no open positions (holding cash)</td></tr>"
-    start = 10000.0
-    pnl = (total/start - 1)*100
-    color = "#16c784" if pnl >= 0 else "#ea3943"
-    html = f"""<!doctype html><html><head><meta charset=utf-8><title>QuantPaperBot</title>
-<meta http-equiv=refresh content=300>
-<script src=https://cdn.jsdelivr.net/npm/chart.js></script>
-<style>body{{font-family:system-ui;background:#0e1116;color:#e6e6e6;margin:24px}}
-h1{{font-size:20px}} .big{{font-size:34px;font-weight:700;color:{color}}}
-table{{border-collapse:collapse;margin-top:16px;width:100%;max-width:640px}}
-td,th{{border:1px solid #2a2f3a;padding:6px 10px;text-align:left}} th{{background:#1a1f2b}}
-.card{{background:#151a22;padding:18px;border-radius:10px;max-width:900px}}</style></head>
-<body><div class=card>
-<h1>QuantPaperBot — Donchian 55/20 + 200MA basket (paper, 3x)</h1>
-<div>Equity <span class=big>${total:,.2f}</span> &nbsp; ({pnl:+.2f}%) &nbsp; <span style='color:#888'>updated {now()[:16]}</span></div>
-<canvas id=c height=90></canvas>
-<h3>Open positions</h3>
-<table><tr><th>Coin</th><th>Units</th><th>Entry</th><th>Stop</th></tr>{rows}</table>
-</div>
-<script>
-new Chart(document.getElementById('c'),{{type:'line',
-data:{{labels:{times},datasets:[{{label:'Equity $',data:{eqs},borderColor:'{color}',
-backgroundColor:'rgba(22,199,132,.1)',fill:true,pointRadius:0,tension:.25}}]}},
-options:{{plugins:{{legend:{{display:false}}}},scales:{{x:{{ticks:{{color:'#888',maxTicksLimit:8}}}},y:{{ticks:{{color:'#888'}}}}}}}}}});
-</script></body></html>"""
-    (HERE/"dashboard.html").write_text(html, encoding="utf-8")
-
-
 def write_webdata(st, total):
     # compact JSON the hosted dashboard reads
     series = []
@@ -210,7 +166,6 @@ def cycle():
         w=csv.writer(f)
         if new: w.writerow(["time","equity"])
         w.writerow([now(), round(total,2)])
-    write_dashboard(st, total)
     write_webdata(st, total)
     summary = f"PaperBot ${total:,.2f} ({(total/START_EQUITY-1)*100:+.1f}%) | " + (", ".join(actions) if actions else "no trades")
     tg(summary)

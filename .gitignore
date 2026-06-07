@@ -10,7 +10,6 @@ __pycache__/
 live_bot/state.json
 live_bot/*.csv
 live_bot/*.log
-live_bot/dashboard.html
 web/data.json
 
 # OS / editor cruft

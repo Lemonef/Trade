@@ -3,51 +3,41 @@
 Forward-tests the validated strategy with **no real money**: Donchian 55/20 + 200-MA filter,
 long-only, ATR stop, ATR-risk sizing, ~20-coin Binance basket (each coin = equal-capital sub-account).
 
+**Runs itself in GitHub's cloud** via GitHub Actions every 4h — no server, no PC, free.
+
 ## Files
-- `paper_bot.py` — runs one trading cycle (fetch → signals → paper fills → save/log).
-- `status.py` — snapshot of what the bot sees (regime, breakout distance, open positions).
-- `state.json` — persisted paper account (auto-created; gitignored).
-- `equity_log.csv`, `trades.csv` — running logs (gitignored).
+- `paper_bot.py` — one trading cycle (fetch Binance data → signals → paper fills → save/log → web data).
+- `status.py` — local snapshot of signals + equity (for debugging; optional).
+- `state.json`, `equity_log.csv`, `trades.csv` — paper account + logs (auto-created, committed by the Action).
 
-## Run
-```
-python paper_bot.py          # one cycle (run this every 4h)
-python paper_bot.py --loop   # run forever, cycles every 4h
-python status.py             # see current signals + equity
-```
-No API key needed (public Binance data, read-only). It never places real orders.
-
-## Schedule on the Azure VPS (Windows) — one-click
-On the VPS, inside this folder:
-1. `setup.bat`           — installs Python libs + runs a test cycle.
-2. `register_task.bat`   — (Run as administrator) schedules it every 4h via Task Scheduler.
-That's it. To watch: `python status.py`. Logs: `bot_run.log`, `equity_log.csv`, `trades.csv`.
-
-Manual alternatives:
-- `run.bat`      — one cycle (what the scheduler calls).
-- `run_loop.bat` — runs forever, cycles every 4h (keep the window open instead of scheduling).
-- Remove task:   `schtasks /Delete /TN QuantPaperBot /F`
-
-## Config (top of paper_bot.py)
-- `LEVERAGE = 1.0` → set `2.0` for the aggressive sweet spot (≈half-Kelly; ~2× CAGR & DD).
-- `RISK_PCT`, `ATR_STOP`, `ENTRY/EXIT`, `MA_LEN`, `COINS` — all editable.
+## How it runs (GitHub Actions)
+`.github/workflows/paper_bot.yml` runs every 4h: installs deps, runs one cycle, commits state +
+`web/data.json` back to the repo, and (optionally) pings Telegram. Trigger manually anytime:
+repo → **Actions** → **paper-bot** → **Run workflow**.
 
 ## Tracking
-- **`track.bat`** — double-click → shows signals + equity (status.py), stays open.
-- **Web dashboard** — every cycle writes `dashboard.html` (equity chart + positions). Open it in a
-  browser. `serve.bat` serves it at http://localhost:8080/dashboard.html (open port 8080 in Azure
-  NSG for remote access).
-- **Telegram alerts** — set `TG_TOKEN` + `TG_CHAT` at the top of `paper_bot.py`:
-  1. Telegram → message **@BotFather** → `/newbot` → copy the token.
-  2. Message your new bot once, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` → copy the
-     `chat":{"id":NUMBER`. Paste both. Bot then DMs you equity + trades each 4h cycle.
+- **Dashboard:** `web/index.html` (hosted on GitHub Pages) — equity chart + positions, auto-refresh.
+- **Telegram:** set repo secrets `TG_TOKEN` + `TG_CHAT` (Settings → Secrets → Actions) → DMs each cycle.
+  - @BotFather → `/newbot` → token. Chat id: message your bot, open
+    `https://api.telegram.org/bot<TOKEN>/getUpdates`.
+- **Raw:** `equity_log.csv` / `trades.csv` in the repo.
+
+## Config (top of paper_bot.py)
+- `LEVERAGE` (currently 3.0; 1.0 safe, 2.0 ≈ half-Kelly), `RISK_PCT`, `ATR_STOP`, `ENTRY/EXIT`,
+  `MA_LEN`, `COINS`.
 
 ## How to read it
 - **All coins below 200-MA → 0 positions, 100% cash.** Correct: the strategy sits out downtrends.
-- It buys a coin when: closes above its 55-bar high **and** ADX>25 **and** price>200-MA.
-- Exits on: close below 20-bar low **or** ATR(2.5) stop.
+- Buys a coin when: close > its 55-bar high **and** ADX>25 **and** price>200-MA.
+- Exits on: close < 20-bar low **or** ATR(2.5) stop.
+
+## Run locally (optional, for testing)
+```
+pip install requests pandas numpy
+python paper_bot.py     # one cycle
+python status.py        # see signals
+```
 
 ## Goal of this phase
-Run 1-3 months. Confirm live behavior matches the backtest (entries/exits/equity path). If it
-tracks, graduate to real capital (swap paper fills for CCXT live orders + API keys). **Do not skip
-the paper phase.**
+Run 1-3 months. Confirm live behavior matches the backtest. If it tracks → graduate to real capital
+(swap paper fills for CCXT live orders + Binance API keys stored as Action secrets). Don't skip paper.
