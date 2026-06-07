@@ -112,6 +112,8 @@ def build_signals(df, cfg):
     out["rsi"] = r
     if strat == "qb_v1":
         out["st_bull"] = supertrend(df, 10, 3.0) == 1
+    maf = cfg.get("ma_filter", 0)
+    out["mkt_ok"] = (df.close > df.close.rolling(maf).mean()) if maf else True
     out["close"] = df.close
     out["high"] = df.high
     out["low"] = df.low
@@ -144,6 +146,7 @@ def backtest(df, cfg):
     bb_lo = s.bb_lo.values; bb_basis = s.bb_basis.values
     rv = s.rsi.values
     stbull = s.st_bull.values if "st_bull" in s else np.zeros(len(s), bool)
+    mok = s.mkt_ok.values.astype(bool) if "mkt_ok" in s else np.ones(len(s), bool)
 
     def trend_entry(i): return c[i] > dhp[i]
     def trend_exit(i):  return c[i] < dlp[i]
@@ -180,7 +183,7 @@ def backtest(df, cfg):
                 trades.append(equity - entry_equity)
                 units = 0; leg = None; adds = 0; peak = 0
         # entries (flat only)
-        if units == 0:
+        if units == 0 and mok[i]:
             do_trend = False; do_range = False
             if strat == "donchian":
                 do_trend = trend_entry(i) and (tr[i] if cfg.get("adx_filter", True) else True)
