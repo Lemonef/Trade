@@ -226,10 +226,9 @@ def write_webdata(totals, states, btc_ok=True):
             hr_lev=1.5
         derived_tab(f"Blend High-Return ★ (levered <=2x, funding-throttled @{hr_lev}x)","blendhr",[hr_lev*(0.4*trr[i]+0.4*grr[i]) for i in range(m)])
         derived_tab("BTC buy-hold (benchmark)","btchold",brr)
-        # Blend+ cash-yield: 40/40/20 but the 20% cash earns ~5% APR (Binance Earn/T-bills) instead of 0%.
-        # The swarm's #1 certain free uplift (~+1pp CAGR, same DD). cashbar = 5%/yr per 4h bar (6/day).
-        cy=0.05/(365*6)
-        derived_tab("Blend+ ★ (cash-yield 5%)","divplus",[0.4*trr[i]+0.4*grr[i]+0.2*cy for i in range(m)])
+        # REMOVED 2026-06-09: "Blend+ (cash-yield 5%)" tab — it injected a SYNTHETIC +0.2*5%/yr drip every bar,
+        # showing a fake guaranteed uptrend on the FORWARD board (misleading; looked like gains/trades).
+        # Cash-yield is a REAL-ACCOUNT action (move USDT to Binance Earn) + lives in the backtest scoreboard (labeled modeled). Not simulated on the live board.
     except Exception:
         pass
     # Funding / Carry ★ — delta-neutral perp funding harvest (the real retail edge; ~8-20% APY, low DD).
