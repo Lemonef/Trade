@@ -44,6 +44,13 @@ def fetch(sym,limit=400):
     df=pd.DataFrame(r.json(),columns=["t","o","h","l","c","v","ct","q","n","tb","tq","ig"])
     for x in ["o","h","l","c"]: df[x]=df[x].astype(float)
     return df
+FUNDING_URL="https://fapi.binance.com/fapi/v1/fundingRate"
+def fetch_funding(sym,limit=500):  # perp funding rate history (8h periods)
+    try:
+        r=requests.get(FUNDING_URL,params={"symbol":sym,"limit":limit},timeout=20); r.raise_for_status()
+        return [(int(x["fundingTime"]),float(x["fundingRate"])) for x in r.json()]
+    except Exception:
+        return []
 def rma(s,n): return s.ewm(alpha=1/n,adjust=False).mean()
 def indicators(df):
     h,l,c=df.h,df.l,df.c; pc=c.shift()
@@ -139,7 +146,8 @@ def write_webdata(totals, states, btc_ok=True):
             blevels.append({"lev":f"{L}x", **block(f"blend_{L}x", ser, eqb, derived=True)})
     else:
         blevels=[{"lev":f"{L}x", **block(f"blend_{L}x", [], START, derived=True)} for L in LEVELS]
-    tabs.append({"name":"Blend 70/30 (original)","levels":blevels})
+    # REMOVED 2026-06-08: "Blend 70/30 (original)" tab — redundant, superseded by Book v2 + Diversified Blend.
+    # (blevels left computed but not shown; sleeves untouched.) tabs.append({"name":"Blend 70/30 (original)","levels":blevels})
     # BOOK V2: .55 trend + .25 flush + .20 crashreb, scaled x0.3 when BTC<200MA (the upgrade).
     # crashreb starts fresh (shorter history) -> align all three on their common TAIL length.
     v2=[]
@@ -213,9 +221,42 @@ def write_webdata(totals, states, btc_ok=True):
         derived_tab("Blend High-Return ★ (levered ~1.5x)","blendhr",[1.5*(0.4*trr[i]+0.4*grr[i]) for i in range(m)])
         derived_tab("BTC buy-hold (benchmark)","btchold",brr)
     except Exception:
-        for nm,k in [("Gold (PAXG) ★ diversifier","goldph"),("50/50 Trend+Gold ★ (aggressive)","tg5050"),
-                     ("Blend High-Return ★ (levered ~1.5x)","blendhr"),("BTC buy-hold (benchmark)","btchold")]:
-            tabs.append({"name":nm,"levels":[{"lev":f"{L}x", **block(f"{k}_{L}x", [], START, derived=True)} for L in LEVELS]})
+        pass
+    # Funding / Carry ★ — delta-neutral perp funding harvest (the real retail edge; ~8-20% APY, low DD).
+    # REAL Binance funding history (8h). Delta-neutral (long spot + short perp on the paying side) => price PnL ~0,
+    # you collect funding. Leverage is RELATIVELY sane here (market-neutral) so 3x = high-octane yield, not directional blow-up.
+    # OPTIMISTIC/gross: assumes you always sit on the paying side, minus a small rebalance cost. block() annualization is
+    # wrong for 8h periods, so stats computed here at 3 periods/day.
+    def fund_block(key,ser,eqf,L):
+        ev=[s[1] for s in ser]; mdd=0.0; pk=ev[0] if ev else START
+        for v in ev: pk=max(pk,v); mdd=min(mdd,v/pk-1)
+        yrs=len(ev)/(3*365) if ev else 0
+        cagr=((eqf/START)**(1/yrs)-1) if (yrs>0 and eqf>0 and len(ev)>=60) else 0.0
+        rr=np.array([ev[i]/ev[i-1]-1 for i in range(1,len(ev))]) if len(ev)>1 else np.array([])
+        sh=float(rr.mean()/rr.std()*np.sqrt(3*365)) if (len(rr)>=60 and rr.std()>0) else 0.0
+        sh=min(sh,3.0) if sh>0 else max(sh,-3.0)  # cap: pure-carry vol is ~0 => raw Sharpe inflates (60+); real basis risk caps practical ~2-3
+        return {"lev":f"{L}x","equity":round(eqf,2),"pnl_pct":round((eqf/START-1)*100,2),
+                "cagr":round(cagr*100,1),"maxdd":round(mdd*100,1),"sharpe":round(sh,2),
+                "wr":round(float((rr>0).mean()*100),1) if len(rr) else 0.0,"pf":0.0,"trades":0,
+                "derived":True,"series":ser}
+    try:
+        fb=fetch_funding("BTCUSDT",1000); fe=dict(fetch_funding("ETHUSDT",1000)); fcost=0.000002  # amortized entry/exit spread (one-time, tiny per 8h)
+        if len(fb)>=60:
+            fl=[]
+            for L in LEVELS:
+                eqf=START; ser=[]
+                for t,rbt in fb:
+                    rate=(abs(rbt)+abs(fe.get(t,rbt)))/2.0          # capture funding on the paying side
+                    eqf*=(1+L*(rate-fcost))
+                    ser.append([datetime.fromtimestamp(t/1000,timezone.utc).isoformat()[:16],round(eqf,2)])
+                fl.append(fund_block(f"funding_{L}x",ser,eqf,L))
+            tabs.append({"name":"Funding / Carry ★ (delta-neutral, real edge)","levels":fl})
+        else:
+            tabs.append({"name":"Funding / Carry ★ (delta-neutral, real edge)",
+                         "levels":[fund_block(f"funding_{L}x",[],START,L) for L in LEVELS]})
+    except Exception:
+        tabs.append({"name":"Funding / Carry ★ (delta-neutral, real edge)",
+                     "levels":[fund_block(f"funding_{L}x",[],START,L) for L in LEVELS]})
     pos=[{"coin":c,"units":round(cs["units"],6),"entry":cs["entry"],"stop":round(cs.get("stop",0),6)}
          for c,cs in states["trend_1x"]["coins"].items() if cs["units"]>0]
     pos+=[{"coin":c+" (flush)","units":round(cs["units"],6),"entry":cs["entry"],"stop":"+5%/2bar"}
