@@ -218,7 +218,13 @@ def write_webdata(totals, states, btc_ok=True):
         grr=align("PAXGUSDT"); brr=align("BTCUSDT"); m=len(trr)
         derived_tab("Gold (PAXG) ★ diversifier","goldph",grr)
         derived_tab("50/50 Trend+Gold ★ (aggressive)","tg5050",[0.5*trr[i]+0.5*grr[i] for i in range(m)])
-        derived_tab("Blend High-Return ★ (levered ~1.5x)","blendhr",[1.5*(0.4*trr[i]+0.4*grr[i]) for i in range(m)])
+        # finance-aware throttle: cut leverage 1.5x->1.0x when BTC perp funding annualizes hot (>15%) — avoids max size into crowded-long unwinds
+        try:
+            _fr=fetch_funding("BTCUSDT",6); _recent=(sum(r for _,r in _fr[-3:])/3) if _fr else 0.0
+            hr_lev=1.0 if (_recent*3*365>0.15) else 1.5
+        except Exception:
+            hr_lev=1.5
+        derived_tab(f"Blend High-Return ★ (levered <=2x, funding-throttled @{hr_lev}x)","blendhr",[hr_lev*(0.4*trr[i]+0.4*grr[i]) for i in range(m)])
         derived_tab("BTC buy-hold (benchmark)","btchold",brr)
         # Blend+ cash-yield: 40/40/20 but the 20% cash earns ~5% APR (Binance Earn/T-bills) instead of 0%.
         # The swarm's #1 certain free uplift (~+1pp CAGR, same DD). cashbar = 5%/yr per 4h bar (6/day).
@@ -251,7 +257,8 @@ def write_webdata(totals, states, btc_ok=True):
                 eqf=START; ser=[]
                 for t,rbt in fb:
                     rate=(abs(rbt)+abs(fe.get(t,rbt)))/2.0          # capture funding on the paying side
-                    eqf*=(1+L*(rate-fcost))
+                    gate=1.0 if rate>=0.00005 else 0.3              # gated: size UP when funding frothy, mostly cash when calm
+                    eqf*=(1+L*gate*(rate-fcost))
                     ser.append([datetime.fromtimestamp(t/1000,timezone.utc).isoformat()[:16],round(eqf,2)])
                 fl.append(fund_block(f"funding_{L}x",ser,eqf,L))
             tabs.append({"name":"Funding / Carry ★ (delta-neutral, real edge)","levels":fl})
