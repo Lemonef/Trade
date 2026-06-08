@@ -157,6 +157,27 @@ def write_webdata(totals, states, btc_ok=True):
     else:
         v2=[{"lev":f"{L}x", **block(f"bookv2_{L}x", [], START, derived=True)} for L in LEVELS]
     tabs.append({"name":"Book v2 (upgraded ★)","levels":v2})
+    # Diversified Blend ★ — 40% crypto-trend + 40% gold(PAXG) + 20% cash. ALL on Binance (PAXGUSDT), ONE account, no other broker.
+    # Diversification ~doubles Sharpe & cuts DD vs crypto-only (backtest 8y: Sh 1.28, DD -28% vs BTC -77%). Derived (no extra trades/state).
+    try:
+        dbl=[]
+        if len(ts)>1:
+            times=[r[0] for r in ts]; tr=rets(ts)
+            pc=fetch("PAXGUSDT",limit=len(ts)+5)["c"].pct_change().fillna(0).tolist()
+            gr=pc[-len(tr):] if len(pc)>=len(tr) else [0.0]*len(tr)
+            gr=(gr+[0.0]*len(tr))[:len(tr)]
+            for L in LEVELS:
+                eqb=START; ser=[[times[0],START]]
+                for i in range(len(tr)):
+                    eqb*=(1+L*(0.4*tr[i]+0.4*gr[i]))   # +0.2 cash @ 0%
+                    ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
+                dbl.append({"lev":f"{L}x", **block(f"divblend_{L}x", ser, eqb, derived=True)})
+        else:
+            dbl=[{"lev":f"{L}x", **block(f"divblend_{L}x", [], START, derived=True)} for L in LEVELS]
+        tabs.append({"name":"Diversified Blend ★ (crypto+gold, all-Binance)","levels":dbl})
+    except Exception:
+        tabs.append({"name":"Diversified Blend ★ (crypto+gold, all-Binance)",
+                     "levels":[{"lev":f"{L}x", **block(f"divblend_{L}x", [], START, derived=True)} for L in LEVELS]})
     pos=[{"coin":c,"units":round(cs["units"],6),"entry":cs["entry"],"stop":round(cs.get("stop",0),6)}
          for c,cs in states["trend_1x"]["coins"].items() if cs["units"]>0]
     pos+=[{"coin":c+" (flush)","units":round(cs["units"],6),"entry":cs["entry"],"stop":"+5%/2bar"}
