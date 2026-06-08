@@ -101,7 +101,8 @@ def block(name,series,total,derived=False):
         if len(rr)>2 and rr.std()>0: sh=float(rr.mean()/rr.std()*np.sqrt(6*365))
     pl=pnls(name); wins=[x for x in pl if x>0]; los=[x for x in pl if x<=0]
     wr=len(wins)/len(pl)*100 if pl else 0.0
-    pf=sum(wins)/abs(sum(los)) if los and sum(los)!=0 else (0.0 if not wins else 999.0)
+    pf=sum(wins)/abs(sum(los)) if los and sum(los)!=0 else (0.0 if not wins else 99.99)  # cap (no-loss = "infinite" PF); avoid alarming 999 sentinel
+    pf=min(pf,99.99)  # never display absurd profit-factor
     return dict(equity=round(total,2),pnl_pct=round((total/START-1)*100,2),cagr=round(cagr*100,1),
                 maxdd=round(mdd*100,1),sharpe=round(sh,2),wr=round(wr,1),pf=round(pf,2),
                 trades=len(pl),derived=derived,series=series)
