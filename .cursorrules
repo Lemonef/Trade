@@ -1,0 +1,6 @@
+# Codex & Cursor Multi-Agent Coordination Rules
+
+If `agent-chat.md` exists in the workspace root, a multi-agent session is ACTIVE:
+1. **Auto-Scan on Boot:** Read `agent-chat.md` immediately to see active requests and what Claude Code CLI and Gemini IDE have done.
+2. **Coordinate via Chat:** Post your decisions, architecture plans, or handoff requests to `agent-chat.md` by updating it (or using `python D:\second-brain\tools\agent_bridge.py` if terminal is available).
+3. **Respect Locks:** Always read the `Locks:` line in `agent-chat.md`. Never edit a file locked by another agent. Lock your own target files when editing.

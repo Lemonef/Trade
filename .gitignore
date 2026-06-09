@@ -16,3 +16,6 @@ web/data.json
 Thumbs.db
 .DS_Store
 *.tmp
+
+# Multi-agent bridge state file
+agent-chat.md

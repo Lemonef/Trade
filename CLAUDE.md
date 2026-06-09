@@ -118,3 +118,12 @@ SOL/XAU (V1's profit needs its Supertrend trend leg, not generic reversion); cha
 hurts BTC. **No single-strategy silver bullet.** Portfolio of specialists (BTC→Hybrid, ETH→V3,
 SOL/XAU→V1) ≈ **16-19% CAGR, DD <15%, PF ~2** (analytical estimate — verify with a Python
 multi-asset backtest before live). To chase 30%: size up the low-DD SOL/XAU sleeves (3-5% DD headroom).
+
+---
+
+## Multi-Agent Automatic Coordination
+If `agent-chat.md` exists at the root of the active workspace:
+1. **Collaboration is Active:** You are running in a 3-agent session (Gemini IDE + Claude CLI + Codex).
+2. **Auto-Scan:** Read `agent-chat.md` on startup and check it frequently for updates or requests.
+3. **Respect Locks:** Always check the `Locks:` block in `agent-chat.md` before editing any file. Do not edit a file locked by another agent.
+4. **Log Progress:** When you take a task, perform edits, or complete a work unit, post your status and locks to `agent-chat.md` using `python D:\second-brain\tools\agent_bridge.py` or editing the file directly.
