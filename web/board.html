@@ -65,7 +65,9 @@
   <div class="seg" id="lev"><span class="lbl">Leverage</span><button data-l="1x" class="on">1×</button><button data-l="2x">2×</button><button data-l="3x">3×</button><button data-l="all">ALL ⊞</button></div>
  </div>
  <div class="cols">
-  <div class="left"><table id="t"><thead id="th"></thead><tbody></tbody></table></div>
+  <div class="left"><table id="t"><thead id="th"></thead><tbody></tbody></table>
+   <div class="extranote" style="margin-top:8px"><b>n/a in PF / Win%</b> = trade-level metrics, only defined for bots that place DISCRETE trades (open→close), i.e. the trend core. Blends &amp; buy-holds are continuous return streams (no trades) → PF/Win undefined, but all return-based metrics (Sharpe/Calmar/DD/skew…) still apply. · <b>Dimmed cols</b> at 2×/3× = unchanged by leverage.</div>
+  </div>
   <div class="right"><div class="card">
    <h2 id="nm" style="margin:0 0 4px">—</h2><div class="note" id="bnote2" style="margin-bottom:12px"></div>
    <div class="kpis">
