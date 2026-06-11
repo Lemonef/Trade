@@ -293,7 +293,8 @@ HTML = r"""<!doctype html>
     ? "✅ <b>Recent (2022→now)</b> — 2018–21 explosion removed; current-regime proxy, but STILL in-sample + gross. Real forward truth = the live bot on the <b>Strategy Book</b>."
     : "⚠ <b>Full (2018–26)</b> — includes the 2020–21 mega-bull. Optimistic CEILING; not for forward expectation. Flip to <b>OOS</b> for the trustworthy one.";
   const th=document.getElementById("th"),tb=document.querySelector("#t tbody");
-  th.innerHTML=`<tr><th class="l" data-k="name">Strategy</th><th data-k="cagr">CAGR%</th><th data-k="sharpe">Sharpe</th><th data-k="sortino">Sortino</th><th data-k="calmar">Calmar</th><th data-k="maxdd">MaxDD%</th><th data-k="tstat">t-stat</th><th data-k="pf">PF</th><th data-k="win">Win%</th><th data-k="gtp">Gain/Pain</th><th data-k="ulcer">Ulcer</th><th data-k="cvar">CVaR</th><th data-k="skew">Skew</th><th data-k="kurt">Kurt</th><th data-k="muw">Mo u/w</th><th class="l" data-k="category">Type</th></tr>`;
+  const hl=(L==='2x'||L==='3x')?' style="color:var(--accent);text-shadow:0 0 6px rgba(124,196,255,.4)"':'';   // mark the cols leverage actually moves
+  th.innerHTML=`<tr><th class="l" data-k="name">Strategy</th><th data-k="cagr"${hl}>CAGR%${hl?' ▲':''}</th><th data-k="sharpe">Sharpe</th><th data-k="sortino">Sortino</th><th data-k="calmar"${hl}>Calmar${hl?' ▲':''}</th><th data-k="maxdd"${hl}>MaxDD%${hl?' ▲':''}</th><th data-k="tstat">t-stat</th><th data-k="pf">PF</th><th data-k="win">Win%</th><th data-k="gtp">Gain/Pain</th><th data-k="ulcer">Ulcer</th><th data-k="cvar">CVaR</th><th data-k="skew">Skew</th><th data-k="kurt">Kurt</th><th data-k="muw">Mo u/w</th><th class="l" data-k="category">Type</th></tr>`;
   let rows=[];
   if(P==='oos'){
     DATA.filter(s=>s.oos).forEach(s=>{const lv=(L==='all'?'1x':L);const k=cell(s,lv);if(k)rows.push({label:s.name+(k._holdout?'  · holdout':'  · WF✓'),k,category:s.category,s,lv});});
