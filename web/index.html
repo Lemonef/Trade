@@ -64,15 +64,15 @@
 /* ---- verified strategy scoreboard (backtest / audited — see Strategy Lab) ---- */
 const STRATS=[
   {name:"Crypto Blend", role:"Core · best risk-adj", c:"var(--up)", big:"1.28", biglab:"OOS Sharpe",
-   desc:".55 trend / .25 flush / .20 crashreb · 4H", m:[["CAGR","~20%"],["Close DD","−9.8%"]], badge:["deploy","Deploy · paper"], star:true},
+   desc:".55 trend / .25 flush / .20 crashreb · 4H", m:[["CAGR","~20%"],["Close DD","−9.8%"]], badge:["deploy","Deploy · paper"], star:true, cal:"2.0"},
   {name:"Trend Core", role:"Foundation", c:"var(--accent)", big:"0.86", biglab:"OOS Sharpe",
-   desc:"Donchian 55/20 + MA200 + BTC-regime gate", m:[["CAGR","~17%"],["Close DD","−23%"]], badge:["deploy","Deploy · core"]},
+   desc:"Donchian 55/20 + MA200 + BTC-regime gate", m:[["CAGR","~17%"],["Close DD","−23%"]], badge:["deploy","Deploy · core"], cal:"0.74"},
   {name:"40/40/20 Blend", role:"Most stable", c:"var(--amber)", big:"1.11", biglab:"Sharpe",
-   desc:"crypto-trend / gold / bonds · diversified", m:[["CAGR","~16.8%"],["Close DD","−21.8%"]], badge:["deploy","Deploy · diversified"]},
+   desc:"crypto-trend / gold / bonds · diversified", m:[["CAGR","~16.8%"],["Close DD","−21.8%"]], badge:["deploy","Deploy · diversified"], cal:"0.77"},
   {name:"Blend High-Return", role:"Max return · high risk", c:"var(--warn)", big:"≤2×", biglab:"Leverage",
-   desc:"levered blend, funding-throttled @1.5×", m:[["Return","highest"],["Real DD","−45→65%"]], badge:["cand","Aggressive · caution"]},
+   desc:"levered blend, funding-throttled @1.5×", m:[["Return","highest"],["Real DD","−45→65%"]], badge:["cand","Aggressive · caution"], cal:"low"},
   {name:"BTC Buy-Hold", role:"Benchmark", c:"var(--mut)", big:"1.0×", biglab:"Beta",
-   desc:"the thing every bot must beat risk-adjusted", m:[["Role","yardstick"],["DD","brutal"]], badge:["bench","Benchmark"]},
+   desc:"the thing every bot must beat risk-adjusted", m:[["Role","yardstick"],["DD","brutal"]], badge:["bench","Benchmark"], cal:"—"},
 ];
 function bots(){
   document.getElementById('scoreboard').innerHTML=STRATS.map(s=>`
@@ -83,6 +83,7 @@ function bots(){
       <div class="big" style="color:${s.c}">${s.big}</div>
       <div class="biglab">${s.biglab}</div>
       <div class="mrow"><span>${s.m[0][0]} <b>${s.m[0][1]}</b></span><span>${s.m[1][0]} <b>${s.m[1][1]}</b></span></div>
+      <div class="mrow"><span>Calmar <b>${s.cal||'—'}</b></span><span class="mut" style="font-size:10px">full panel → Board</span></div>
       <div style="margin-top:12px"><span class="badge ${s.badge[0]}">${s.badge[1]}</span></div>
     </div>`).join('');
 }
