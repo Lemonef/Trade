@@ -24,16 +24,29 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>RTN-Core — Rotational Trend (candidate)</h1>
-  <div class="sub">Rotational top-8 crypto trend · 4H · BTC/MA200 risk-on gate · equal-weight · funding-aware sizing · point-in-time universe.
-  <span class="pill warn">STATUS: candidate — backtest pending, NOT live</span></div>
+  <h1>RTN-Core — Rotational Trend <span class="mut">(TESTED → KILLED)</span></h1>
+  <div class="sub">Rotational top-8 crypto trend · 4H · BTC/MA200 risk-on gate · equal-weight.
+  <span class="pill" style="background:#3a1212;color:#ea3943">STATUS: TESTED 2026-06-11 — FAILED both gates, NOT deployed</span></div>
   <div style="margin:0 0 16px">
     <a href="./index.html" style="background:#15233a;border:1px solid #2b6cb0;border-radius:9px;padding:8px 14px;font-size:13px">← QuantBot paper book</a>
+    <a href="./strategy_lab.html" style="background:#15233a;border:1px solid #2b6cb0;border-radius:9px;padding:8px 14px;font-size:13px;margin-left:8px">🧪 Strategy Lab</a>
     <a href="./stocks.html" style="background:#15233a;border:1px solid #2b6cb0;border-radius:9px;padding:8px 14px;font-size:13px;margin-left:8px">📈 Stocks</a>
   </div>
 
+  <div class="card" style="border-color:#ea3943">
+    <b>⛔ VERDICT — KILLED (tested 2026-06-11, cross-checked by Codex GPT-5.5).</b>
+    Built the rank-top-8 cross-sectional-momentum rotation + BTC/MA regime gate over a 25-coin universe and walk-forwarded it (Fable's prescribed one test). It <b>failed both keep-gates</b>:
+    <table style="margin-top:10px">
+      <tr><th>Gate</th><th>Required</th><th>Got</th><th></th></tr>
+      <tr><td>Standalone walk-forward OOS Sharpe</td><td>&gt; 0.86</td><td><b>0.53</b> (DD −60%)</td><td style="color:#ea3943">FAIL</td></tr>
+      <tr><td>Swapped into .55/.25/.20 blend</td><td>&gt; 1.28 &amp; beat baseline</td><td><b>0.43</b> vs 0.48 baseline (same OOS dates)</td><td style="color:#ea3943">FAIL</td></tr>
+      <tr><td>Correlation to existing trend core</td><td>low = diversifying</td><td><b>0.54</b> — redundant, not additive</td><td style="color:#ea3943">FAIL</td></tr>
+    </table>
+    <div class="mut" style="margin-top:8px">Rotation adds nothing the validated Donchian/MA200 core doesn't already capture — it's worse standalone AND dilutes the blend. The rotational / XS-momentum family is now <b>CLOSED</b> (matches the earlier OOS XS-momentum failure). Test: <code>backtest/rtn_core_test.py</code>. Note: this harness (daily grid, 25-coin) does not reproduce the canonical 1.28 blend figure — the swap test is relative/apples-to-apples on identical dates, not an absolute claim.</div>
+  </div>
+
   <div class="card">
-    <b>Thesis.</b> Hold the strongest-trending liquid coins from a survivorship-bias-free universe, only when the market regime is risk-on, sized down when funding is hot. It upgrades the validated Donchian/MA200 edge through better <i>construction</i> (universe + selection + sizing) — not new indicators. Origin: 2026-06-10 multi-agent review (Claude Opus 4.8 + Codex GPT-5.5 + Gemini 2.5 Pro).
+    <b>Original thesis (for the record — did not hold up).</b> Hold the strongest-trending liquid coins from a survivorship-bias-free universe, only when regime is risk-on, sized down when funding is hot — upgrading the Donchian/MA200 edge through better <i>construction</i>. Origin: 2026-06-10 multi-agent review. <span class="mut">The construction ideas (PIT universe, funding throttle) remain valid risk hygiene, but rotational selection itself does not beat the core.</span>
   </div>
 
   <h2>Construction</h2>
