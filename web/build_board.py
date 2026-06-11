@@ -160,7 +160,8 @@ HTML = r"""<!doctype html>
  .extranote{font-family:var(--mono);font-size:10px;color:var(--dim);margin:2px 0 8px;line-height:1.4}
  .heat{margin-top:14px;overflow-x:auto}
  .heat .ht{font-family:var(--mono);font-size:11px;color:var(--mut);margin:0 0 4px}
- .heat table{border-collapse:collapse;font-family:var(--mono);font-size:10px;width:100%}
+ .heat table{border-collapse:collapse;font-family:var(--mono);font-size:11px;width:100%;max-width:940px}
+ .heat td,.heat th{min-width:42px}
  .heat td,.heat th{padding:4px 4px;text-align:center;border:1px solid var(--ink)}
  .heat th{color:var(--mut);font-weight:500} .heat td.y{color:var(--mut);text-align:right;padding-right:7px}
  .heat .ann{font-weight:700;border-left:2px solid var(--line2)}
