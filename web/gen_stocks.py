@@ -117,7 +117,6 @@ def main():
 <p class="lede">Live paper track of the spike-hunter framework, built straight from the brain ledger (<code>paper-trades.md</code>) — never stale. Real price history (yfinance close), entry markers, unrealized P&amp;L.</p>
 <div class="nav">
   <a class="home" href="./index.html">◆ Strategy Book</a>
-  <a href="./strategy_lab.html">🧪 Strategy Lab</a>
   <a href="./board.html">📊 Backtest Board</a>
 </div>
 <div class="cols">

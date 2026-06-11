@@ -131,6 +131,10 @@ HTML = r"""<!doctype html>
  .heat td,.heat th{padding:4px 4px;text-align:center;border:1px solid var(--ink)}
  .heat th{color:var(--mut);font-weight:500} .heat td.y{color:var(--mut);text-align:right;padding-right:7px}
  .heat .ann{font-weight:700;border-left:2px solid var(--line2)}
+ #oospanel{width:100%;border-collapse:collapse;font-size:11px}
+ #oospanel td,#oospanel th{padding:8px 8px;text-align:right;border-bottom:1px solid var(--line);font-family:var(--mono);white-space:nowrap}
+ #oospanel th{color:var(--mut);font-size:10px;letter-spacing:.05em;text-transform:uppercase}
+ #oospanel td.l,#oospanel th.l{text-align:left;font-family:var(--sans)}
  @media(max-width:560px){.left,.right{min-width:0} .kpis{grid-template-columns:repeat(2,1fr)} .kpis2{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -142,7 +146,6 @@ HTML = r"""<!doctype html>
  <div class="nav">
   <a href="./index.html">◆ Strategy Book</a>
   <a href="./stocks.html">📈 Stocks — Spike Hunter</a>
-  <a href="./strategy_lab.html">🧪 Strategy Lab — the gauntlet</a>
   <a class="home" href="./board.html">📊 Backtest Board</a>
  </div>
  <div class="banner live" id="periodbanner"></div>
@@ -172,13 +175,42 @@ HTML = r"""<!doctype html>
     <div class="kpi"><div class="k">Kurtosis</div><div class="v" id="kku">—</div></div>
     <div class="kpi"><div class="k">Mo. u/w</div><div class="v" id="kuw">—</div></div>
    </div>
-   <div class="extranote">Profit Factor · Expectancy · t-stat · SQN need a trade log (not the equity curve) → those live on Strategy Lab / the backtest scripts. *Sharpe/Sortino curve-derived.</div>
+   <div class="extranote">This panel is curve-derived from board_data.json (full/recent). The real walk-forward OOS + trade-level (PF/Win/t-stat) panel is in §2 below. *Sharpe/Sortino curve-derived.</div>
    <canvas id="cv" width="860" height="560"></canvas>
    <div id="heat" class="heat"></div>
    <div class="bnote" id="warn"></div>
   </div></div>
  </div>
- <footer>*Sharpe is curve-derived (consistent across both windows), not the native-frequency OOS figure — for that + net-of-fees see Strategy Lab. Backtests, not live · gross of funding · plan real DD ≈ 2× · not financial advice · Lemonef/Trade</footer>
+ <h2 style="margin-top:34px"><span class="n">02</span> OOS full panel <span class="mut" style="font-family:var(--mono);font-size:12px;font-weight:400">— real walk-forward, trade-level where available (backtest/panel_dump.py) · THE TRUSTWORTHY ONE</span></h2>
+ <div class="card" style="overflow-x:auto;padding:6px 10px">
+   <table id="oospanel">
+     <thead><tr><th class="l">Bot</th><th>Sharpe</th><th>Sortino</th><th>Calmar</th><th>Max DD</th><th>t-stat</th><th>PF</th><th>Win%</th><th>$/trade</th><th>Gain/Pain</th><th>Ulcer</th><th>CVaR</th><th>Skew</th><th>Kurt</th><th>Mo u/w</th></tr></thead>
+     <tbody id="oosbody"><tr><td colspan="15" class="mut" style="padding:14px">loading real panel…</td></tr></tbody>
+   </table>
+ </div>
+ <div class="banner gross" id="oosnote"></div>
+
+ <h2><span class="n">03</span> The gauntlet <span class="mut" style="font-family:var(--mono);font-size:12px;font-weight:400">— every bot must pass</span></h2>
+ <div class="card" style="font-family:var(--mono);font-size:12px;color:var(--mut);line-height:1.9">
+   <b>1.</b> Walk-forward OOS · <b>2.</b> Real DD ≈ 2× close-DD · <b>3.</b> Black-swan / regime survival (2020/2022/2026) · <b>4.</b> Year-by-year (bull-flattered?) · <b>5.</b> Survivorship / PIT universe · <b>6.</b> Fees / funding / slippage · <b>7.</b> Block-bootstrap p05 · <b>8.</b> ≥100 trades · <b>9.</b> Random-entry + inversion baseline · <b>10.</b> Beat buy-hold-BTC · <b>11.</b> Mechanism-backed, not curve-fit · <b>12.</b> Leverage ≤2× · <b>13.</b> CRITIQUE + AUDIT (audit verifies the critique too).
+ </div>
+
+ <h2><span class="n">04</span> Honest caveats <span class="mut" style="font-family:var(--mono);font-size:12px;font-weight:400">— apply to ALL</span></h2>
+ <div class="banner gross" style="line-height:1.75">
+   • <b>Bull-flattered:</b> year-by-year the book LOSES in bear; the regime filter (→cash) limits damage, doesn't make it a bear winner.<br>
+   • <b>Real DD ≈ 2× close DD</b> (intrabar + leverage); &gt;2× risks liquidation.<br>
+   • <b>Survivorship:</b> backtests use surviving coins → optimistic ceiling (PIT universe is the fix).<br>
+   • <b>Funding NOT modeled</b> → any leveraged CAGR is optimistic; 1× spot properly costed.<br>
+   • <b>Real gate unmet:</b> none has run live through a regime change — that, not any backtest, unlocks real money (3-6mo paper + 1 regime shift).<br>
+   • <b>Honest live expectation:</b> ~15–25% CAGR moderate leverage, real DD ~2× — beats index, not magic.
+ </div>
+
+ <h2><span class="n">05</span> Rejected <span class="mut" style="font-family:var(--mono);font-size:12px;font-weight:400">— failed the gauntlet (discipline, not findings)</span></h2>
+ <div class="card" style="font-family:var(--mono);font-size:12px;color:var(--mut);line-height:1.7">
+   Bear-short sleeve · Donchian ensemble SSRN (OOS 0.73&lt;0.86) · AdaptiveTrend arXiv 2.41 (shorts+survivorship) · vol-targeting (double-counts) · funding market-timing (fade thesis false) · on-chain/liquidation (decayed) · XS-mom/lowvol/short-reversal (neg OOS) · RTN-Core rotational (0.53, killed) · HFT lead-lag AVAX +1523% (dies on fees) · halving/Q4 seasonality (small caveated tilt only). <b class="amber" style="color:var(--amber)">Frontier exhausted — gains now come from construction + execution, not new signals.</b>
+ </div>
+
+ <footer>§1 = curve-derived (full/recent, in-sample). §2 = real walk-forward OOS, the trustworthy panel. Backtests, not live · gross of funding · plan real DD ≈ 2× · not financial advice · Lemonef/Trade</footer>
 </div>
 <script>
  const DATA=__DATA__; let L="1x", P="recent", key="cagr", dir=-1, sel=DATA[0];
@@ -254,6 +286,21 @@ HTML = r"""<!doctype html>
  document.querySelectorAll("#per button").forEach(b=>b.onclick=()=>{P=b.dataset.p;document.querySelectorAll("#per button").forEach(x=>{x.classList.remove("on");x.classList.toggle("honest",x.dataset.p==="recent");});b.classList.add("on");render();draw(sel);});
  document.querySelectorAll("#lev button").forEach(b=>b.onclick=()=>{L=b.dataset.l;document.querySelectorAll("#lev button").forEach(x=>x.classList.remove("on"));b.classList.add("on");render();draw(sel);});
  render();draw(sel);
+
+ // --- §2 OOS full panel (real, from backtest/panel_dump.py → lab_panel.json) ---
+ fetch('./lab_panel.json?ts='+Date.now()).then(r=>r.json()).then(P=>{
+  const nb=(v,s='')=>(v==null)?'<span class="mut">—</span>':v+s;
+  const na='<span class="mut">n/a</span>';
+  const row=(name,k,tr)=>`<tr><td class="l"><b>${name}</b></td><td>${nb(k.sharpe)}</td><td>${nb(k.sortino)}</td>
+    <td>${nb(k.calmar)}</td><td class="neg">${nb(k.maxdd,'%')}</td><td>${nb(k.tstat)}</td>
+    <td>${tr?nb(k.pf):na}</td><td>${tr?nb(k.wr,'%'):na}</td><td>${tr?nb(k.exp,''):na}</td>
+    <td>${nb(k.gtp)}</td><td>${nb(k.ulcer,'%')}</td><td>${nb(k.cvar,'%')}</td>
+    <td style="color:${k.skew<0?'var(--dn)':'var(--up)'}">${nb(k.skew)}</td><td>${nb(k.kurt)}</td><td>${nb(k.muw,'mo')}</td></tr>`;
+  document.getElementById('oosbody').innerHTML = row('Trend core (WF OOS, 4H)',P.trend,true) + row('Crypto blend .55/.25/.20 (full, daily)',P.blend_full,false);
+  document.getElementById('oosnote').innerHTML =
+   'Real OOS, no fabrication. <b>Trend core</b>: walk-forward Sharpe <b>0.75</b> (below the old 0.86) · trade-level PF 1.3 / Win 33% / t-stat 1.55 (marginal) · <b style="color:var(--dn)">negative skew −0.67 + fat tails</b> = crash-exposed → why it isn\'t run alone. '+
+   '<b>Blend</b>: <b style="color:var(--up)">positive skew +0.83</b> (flush+crashreb profit from crashes) · t-stat <b>3.67</b> (strong). Blend has no discrete trades (return-stream combo) so PF/Win/$ = n/a. Blend Sharpe window-sensitive: 1.28 (conservative weight-search OOS) → 1.58 full (shown) → 1.7 recent.';
+ }).catch(e=>{document.getElementById('oosbody').innerHTML='<tr><td colspan="15" class="mut" style="padding:14px">panel data not found — run backtest/panel_dump.py</td></tr>';});
 </script>
 <script type="module" src="./anim.js"></script>
 </body></html>"""
