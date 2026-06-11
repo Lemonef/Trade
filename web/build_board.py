@@ -181,7 +181,7 @@ HTML = r"""<!doctype html>
  </div>
  <div class="cols">
   <div class="left"><table id="t"><thead id="th"></thead><tbody></tbody></table>
-   <div class="extranote" style="margin-top:8px"><b>n/a in PF / Win%</b> = trade-level metrics, only defined for bots that place DISCRETE trades (open→close), i.e. the trend core. Blends &amp; buy-holds are continuous return streams (no trades) → PF/Win undefined, but all return-based metrics (Sharpe/Calmar/DD/skew…) still apply. · <b>Dimmed cols</b> at 2×/3× = unchanged by leverage.</div>
+   <div class="extranote" style="margin-top:8px"><b>PF</b> = trade-level (gross win$ ÷ loss$), only defined for bots that place DISCRETE trades (open→close) → only the <b>trend core</b> (1.3). Blends &amp; buy-holds are continuous return streams (no trades) → PF n/a. <b>Win%</b> ≠ same measure across rows: trend = % winning TRADES (33%, low is normal for trend-following — few big winners); the rest = % winning PERIODS/bars (~50%) — <b>don't compare the two</b>. All return-based metrics (Sharpe/Calmar/DD/skew…) apply to everything. · <b>Dimmed cols</b> at 2×/3× = unchanged by leverage.</div>
   </div>
   <div class="right"><div class="card">
    <h2 id="nm" style="margin:0 0 4px">—</h2><div class="note" id="bnote2" style="margin-bottom:12px"></div>
@@ -306,7 +306,7 @@ HTML = r"""<!doctype html>
   rows.sort((a,b)=>{let av=kv(a),bv=kv(b); if(typeof av==="string")return (av||"").localeCompare(bv||"")*dir; av=(av==null||Number.isNaN(av))?-Infinity:av; bv=(bv==null||Number.isNaN(bv))?-Infinity:bv; return (av-bv)*dir;});
   const na='<span class="mut">n/a</span>';
   const cells=k=>{ if(!k) return '<td colspan="14" class="mut">— no data this period</td>';
-    const d=h=>k._proj?`<span style="opacity:.32">${h}</span>`:h;   // dim metrics leverage doesn't change
+    const d=h=>k._proj?`<span style="opacity:.5">${h}</span>`:h;   // dim metrics leverage doesn't change (readable but secondary)
     return `<td>${f(k.cagr,'%')}</td><td>${d(f(k.sharpe))}</td><td>${d(f(k.sortino))}</td><td>${f(k.calmar)}</td><td class="neg">${f(k.maxdd,'%')}${k.ruin?' ⛔':''}</td>`
      +`<td>${d(f(k.tstat))}</td><td>${d(k.pf!=null?f(k.pf):na)}</td><td>${d((k.wr!=null||k.win!=null)?((k.wr!=null?k.wr:k.win)+'%'):na)}</td>`
      +`<td>${d(f(k.gtp))}</td><td>${d(fp(k.ulcer,'%'))}</td><td>${d(f(k.cvar,'%'))}</td><td style="color:${k.skew<0?'var(--dn)':'var(--up)'}">${d(fp(k.skew))}</td><td>${d(fp(k.kurt))}</td><td>${d(k.muw!=null?k.muw+'mo':'—')}</td>`; };
