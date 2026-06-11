@@ -184,6 +184,12 @@ HTML = r"""<!doctype html>
  <div class="toggles">
   <div class="seg" id="per"><span class="lbl">Period</span><button data-p="recent" class="on honest">Recent · 2022→ (honest)</button><button data-p="full">Full · 2018–26 (gross)</button><button data-p="oos">OOS · walk-forward (1 genuine)</button></div>
   <div class="seg" id="lev"><span class="lbl">Leverage</span><button data-l="1x" class="on">1×</button><button data-l="2x">2×</button><button data-l="3x">3×</button><button data-l="all">ALL ⊞</button></div>
+  <div style="margin-left:auto;display:flex;gap:7px;align-items:center;font-family:var(--mono);font-size:10px">
+    <span style="color:var(--mut);letter-spacing:.1em">ALL VIEW →</span>
+    <span style="padding:3px 10px;border-radius:999px;background:rgba(124,196,255,.15);color:#7cc4ff;border:1px solid rgba(124,196,255,.4);font-weight:700">1×</span>
+    <span style="padding:3px 10px;border-radius:999px;background:rgba(39,211,138,.15);color:#27d38a;border:1px solid rgba(39,211,138,.4);font-weight:700">2×</span>
+    <span style="padding:3px 10px;border-radius:999px;background:rgba(232,161,75,.15);color:#e8a14b;border:1px solid rgba(232,161,75,.4);font-weight:700">3×</span>
+  </div>
  </div>
  <div class="cols">
   <div class="left"><table id="t"><thead id="th"></thead><tbody></tbody></table>
