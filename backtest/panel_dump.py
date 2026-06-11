@@ -57,7 +57,11 @@ def panel(pr, ppy):
         else:
             if uws is None: uws = i
             longest = max(longest, (idx[i] - idx[uws]).days)
+    step = max(1, len(eq) // 160)                                  # downsample equity curve for the chart
+    ser = [[(eq.index[i].date().isoformat() if hasattr(eq.index[i], "date") else str(eq.index[i])[:10]),
+             round(float(eq.iloc[i]) * 10000, 2)] for i in range(0, len(eq), step)]
     return {
+        "series": ser,
         "cagr": round(cagr, 1), "sharpe": round(sharpe, 2),
         "sortino": round(sortino, 2) if sortino is not None else None,
         "calmar": round(calmar, 2) if calmar is not None else None,

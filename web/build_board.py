@@ -104,6 +104,14 @@ if "blend" in lab:
     strats.append({"name": "Crypto blend .55/.25/.20 (quasi-OOS ⚠)", "category": "deploy",
                    "note": "book_final.py · 2nd-half holdout, BUT weights were fit on this window → quasi-OOS / optimistic, NOT genuine walk-forward (only the trend core is true WF)",
                    "levels": {}, "oos": lab["blend"]})
+# The rest have NO params to walk-forward (buy-holds, fixed-weight blends) → their honest
+# out-of-sample = the post-2022 HOLDOUT (= the Recent slice). Tag as _holdout so they're
+# clearly NOT genuine walk-forward, but the OOS table has full strategy parity.
+for s in strats:
+    if "oos" not in s:
+        rp = (s.get("levels", {}).get("1x") or {}).get("recent")
+        if rp and rp.get("sharpe") is not None:
+            s["oos"] = dict(rp); s["oos"]["_holdout"] = True
 DATA = json.dumps(strats)
 
 HTML = r"""<!doctype html>
@@ -279,7 +287,7 @@ HTML = r"""<!doctype html>
  }
  function render(){
   document.getElementById("periodbanner").innerHTML = P==="oos"
-    ? "✅ <b>OOS</b> — ⚠ only the <b>Trend core</b> is GENUINE walk-forward (train→test). The <b>blend is quasi-OOS</b> — its weights were fit on this window (optimistic, NOT true walk-forward). Trend PF/Win/$ = a fixed config (illustrative, not the WF picks). 2×/3× = projection (incl vol-drag); real DD ≈ 2× shown, ⛔ = wipeout."
+    ? "✅ <b>OOS</b> — only <b>Trend core</b> is GENUINE walk-forward (tagged <b>WF✓</b>). <b>Blend = quasi-OOS</b> (weights fit on-sample). Rows tagged <b>holdout</b> = buy-holds / fixed-weight blends with no params to walk-forward → their out-of-sample is just the post-2022 slice (= Recent). Trend PF/Win/$ = fixed config (illustrative). 2×/3× = projection (vol-drag); real DD ≈ 2×, ⛔ = wipeout."
     : P==="recent"
     ? "✅ <b>Recent (2022→now)</b> — 2018–21 explosion removed; current-regime proxy, but STILL in-sample + gross. Real forward truth = the live bot on the <b>Strategy Book</b>."
     : "⚠ <b>Full (2018–26)</b> — includes the 2020–21 mega-bull. Optimistic CEILING; not for forward expectation. Flip to <b>OOS</b> for the trustworthy one.";
@@ -287,7 +295,7 @@ HTML = r"""<!doctype html>
   th.innerHTML=`<tr><th class="l" data-k="name">Strategy</th><th data-k="cagr">CAGR%</th><th data-k="sharpe">Sharpe</th><th data-k="sortino">Sortino</th><th data-k="calmar">Calmar</th><th data-k="maxdd">MaxDD%</th><th data-k="tstat">t-stat</th><th data-k="pf">PF</th><th data-k="win">Win%</th><th data-k="gtp">Gain/Pain</th><th data-k="ulcer">Ulcer</th><th data-k="cvar">CVaR</th><th data-k="skew">Skew</th><th data-k="kurt">Kurt</th><th data-k="muw">Mo u/w</th><th class="l" data-k="category">Type</th></tr>`;
   let rows=[];
   if(P==='oos'){
-    DATA.filter(s=>s.oos).forEach(s=>{const lv=(L==='all'?'1x':L);const k=cell(s,lv);if(k)rows.push({label:s.name,k,category:s.category,s,lv});});
+    DATA.filter(s=>s.oos).forEach(s=>{const lv=(L==='all'?'1x':L);const k=cell(s,lv);if(k)rows.push({label:s.name+(k._holdout?'  · holdout':'  · WF✓'),k,category:s.category,s,lv});});
   } else if(L==="all"){
     DATA.forEach(s=>{ if(!s.levels||!Object.keys(s.levels).length)return; (s.category==="research"?["1x"]:["1x","2x","3x"]).forEach(lv=>{const k=cell(s,lv);if(k)rows.push({label:s.name+" ("+lv+")",k,category:s.category,s,lv});});});
   } else {
