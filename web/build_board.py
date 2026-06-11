@@ -10,6 +10,7 @@ levels that liquidate (equity <= 0) are capped + flagged.
     python web/build_board.py   ->  web/board.html
 """
 import json, math, datetime as dt
+from pathlib import Path
 
 RECENT_FROM = "2022-01-01"   # strip the 2018-21 mega-bull
 d = json.load(open("web/board_data.json", encoding="utf-8"))
@@ -66,9 +67,10 @@ def metrics(series, win):
             if uws is None: uws = i
             longest = max(longest, (dt.date.fromisoformat(series[i][0]) - dt.date.fromisoformat(series[uws][0])).days)
     muw = round(longest / 30.4, 1)                                # longest months underwater
+    tstat = round(mean / (sd / len(rets) ** 0.5), 2) if sd > 0 else None  # edge significance (return-stream)
     return {"cagr": cagr, "sharpe": sharpe, "sortino": sortino, "calmar": calmar, "maxdd": mddpct,
-            "gtp": gtp, "ulcer": ulcer, "cvar": cvar, "skew": skew, "kurt": kurt, "kratio": kratio, "muw": muw,
-            "win": win, "series": series}
+            "gtp": gtp, "ulcer": ulcer, "cvar": cvar, "skew": skew, "kurt": kurt, "kratio": kratio,
+            "tstat": tstat, "muw": muw, "win": win, "series": series}
 
 
 def split(strats):
@@ -86,7 +88,20 @@ def split(strats):
     return strats
 
 
-DATA = json.dumps(split(d["strategies"]))
+strats = split(d["strategies"])
+# Inject the REAL walk-forward OOS panel (from panel_dump.py → lab_panel.json) as a 3rd period.
+lab_path = Path("web/lab_panel.json")
+lab = json.loads(lab_path.read_text(encoding="utf-8")) if lab_path.exists() else {}
+OOS_MAP = {"Crypto regime-trend": "trend"}          # board strategy name -> lab key
+for s in strats:
+    k = OOS_MAP.get(s["name"])
+    if k and k in lab:
+        s["oos"] = lab[k]
+# the .55/.25/.20 book isn't in board_data → add it as an OOS-only row
+if "blend_full" in lab:
+    strats.append({"name": "Crypto blend .55/.25/.20 ★", "category": "deploy",
+                   "note": "trend+flush+crashreb book (book_final.py) — OOS only", "levels": {}, "oos": lab["blend_full"]})
+DATA = json.dumps(strats)
 
 HTML = r"""<!doctype html>
 <html lang="en">
@@ -102,8 +117,8 @@ HTML = r"""<!doctype html>
  .seg button:hover{color:var(--txt);border-color:var(--line2)}
  .seg button.on{background:linear-gradient(180deg,#1b2942,#16223a);color:#fff;border-color:var(--accent)}
  .seg button.on.honest{border-color:var(--up);background:linear-gradient(180deg,#15301f,#11271a);color:#bdf0d2}
- .cols{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
- .left{flex:1;min-width:430px} .right{flex:1;min-width:430px}
+ .cols{display:block}
+ .left{width:100%;overflow-x:auto;margin-bottom:20px} .right{width:100%}
  #t{width:100%;border-collapse:collapse;font-size:13px} #t th,#t td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--line)}
  #t th{font-family:var(--mono);color:var(--mut);font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer} #t td.l,#t th.l{text-align:left}
  #t td{font-family:var(--mono)}
@@ -142,13 +157,13 @@ HTML = r"""<!doctype html>
 <div class="wrap">
  <p class="eyebrow">Backtests · Full vs Recent</p>
  <h1>Backtest <span class="thin">Board</span></h1>
- <p class="lede">Toggle <b>period</b> + <b>leverage</b>. <b style="color:var(--up)">Recent (2022→now)</b> strips the 2018–21 mega-bull — the honest-er guide to what these do in the <i>current</i> regime. <b style="color:var(--warn)">Full (2018–26)</b> is the bull-inflated gross ceiling. All CAGR/MaxDD/Sharpe recomputed from each curve for the chosen window (table matches chart). Still backtests — not live.</p>
+ <p class="lede">Toggle <b>period</b> + <b>leverage</b>. <b style="color:var(--up)">OOS</b> = real walk-forward (train→test) = the trustworthy one. <b style="color:var(--up)">Recent (2022→now)</b> strips the 2018–21 mega-bull (current-regime, still in-sample). <b style="color:var(--warn)">Full (2018–26)</b> = bull-inflated gross ceiling. <b>One wide table, the full metric panel</b> (Sharpe·Sortino·Calmar·t-stat·PF·skew·Ulcer·K-ratio…). Click any row for its chart + heatmap.</p>
  <div id="nav"></div>
  <script src="./nav.js"></script>
  <div class="banner live" id="periodbanner"></div>
 
  <div class="toggles">
-  <div class="seg" id="per"><span class="lbl">Period</span><button data-p="recent" class="on honest">Recent · 2022→ (honest)</button><button data-p="full">Full · 2018–26 (gross)</button></div>
+  <div class="seg" id="per"><span class="lbl">Period</span><button data-p="recent" class="on honest">Recent · 2022→ (honest)</button><button data-p="full">Full · 2018–26 (gross)</button><button data-p="oos">OOS · walk-forward (trustworthy)</button></div>
   <div class="seg" id="lev"><span class="lbl">Leverage</span><button data-l="1x" class="on">1×</button><button data-l="2x">2×</button><button data-l="3x">3×</button><button data-l="all">ALL ⊞</button></div>
  </div>
  <div class="cols">
@@ -172,27 +187,18 @@ HTML = r"""<!doctype html>
     <div class="kpi"><div class="k">Kurtosis</div><div class="v" id="kku">—</div></div>
     <div class="kpi"><div class="k">Mo. u/w</div><div class="v" id="kuw">—</div></div>
    </div>
-   <div class="extranote">This panel is curve-derived from board_data.json (full/recent). The real walk-forward OOS + trade-level (PF/Win/t-stat) panel is in §2 below. *Sharpe/Sortino curve-derived.</div>
+   <div class="extranote">Detail for the selected row. Full/Recent = curve-derived (in-sample); OOS = real walk-forward (trade-level PF/Win/t-stat where the bot places discrete trades). *Sharpe/Sortino curve-derived.</div>
    <canvas id="cv" width="860" height="560"></canvas>
    <div id="heat" class="heat"></div>
    <div class="bnote" id="warn"></div>
   </div></div>
  </div>
- <h2 style="margin-top:34px"><span class="n">02</span> OOS full panel <span class="mut" style="font-family:var(--mono);font-size:12px;font-weight:400">— real walk-forward, trade-level where available (backtest/panel_dump.py) · THE TRUSTWORTHY ONE</span></h2>
- <div class="card" style="overflow-x:auto;padding:6px 10px">
-   <table id="oospanel">
-     <thead><tr><th class="l">Bot</th><th>Sharpe</th><th>Sortino</th><th>Calmar</th><th>Max DD</th><th>t-stat</th><th>PF</th><th>Win%</th><th>$/trade</th><th>Gain/Pain</th><th>Ulcer</th><th>CVaR</th><th>Skew</th><th>Kurt</th><th>Mo u/w</th></tr></thead>
-     <tbody id="oosbody"><tr><td colspan="15" class="mut" style="padding:14px">loading real panel…</td></tr></tbody>
-   </table>
- </div>
- <div class="banner gross" id="oosnote"></div>
-
- <h2><span class="n">03</span> The gauntlet <span class="mut" style="font-family:var(--mono);font-size:12px;font-weight:400">— every bot must pass</span></h2>
+ <h2><span class="n">02</span> The gauntlet <span class="mut" style="font-family:var(--mono);font-size:12px;font-weight:400">— every bot must pass</span></h2>
  <div class="card" style="font-family:var(--mono);font-size:12px;color:var(--mut);line-height:1.9">
    <b>1.</b> Walk-forward OOS · <b>2.</b> Real DD ≈ 2× close-DD · <b>3.</b> Black-swan / regime survival (2020/2022/2026) · <b>4.</b> Year-by-year (bull-flattered?) · <b>5.</b> Survivorship / PIT universe · <b>6.</b> Fees / funding / slippage · <b>7.</b> Block-bootstrap p05 · <b>8.</b> ≥100 trades · <b>9.</b> Random-entry + inversion baseline · <b>10.</b> Beat buy-hold-BTC · <b>11.</b> Mechanism-backed, not curve-fit · <b>12.</b> Leverage ≤2× · <b>13.</b> CRITIQUE + AUDIT (audit verifies the critique too).
  </div>
 
- <h2><span class="n">04</span> Honest caveats <span class="mut" style="font-family:var(--mono);font-size:12px;font-weight:400">— apply to ALL</span></h2>
+ <h2><span class="n">03</span> Honest caveats <span class="mut" style="font-family:var(--mono);font-size:12px;font-weight:400">— apply to ALL</span></h2>
  <div class="banner gross" style="line-height:1.75">
    • <b>Bull-flattered:</b> year-by-year the book LOSES in bear; the regime filter (→cash) limits damage, doesn't make it a bear winner.<br>
    • <b>Real DD ≈ 2× close DD</b> (intrabar + leverage); &gt;2× risks liquidation.<br>
@@ -202,18 +208,21 @@ HTML = r"""<!doctype html>
    • <b>Honest live expectation:</b> ~15–25% CAGR moderate leverage, real DD ~2× — beats index, not magic.
  </div>
 
- <h2><span class="n">05</span> Rejected <span class="mut" style="font-family:var(--mono);font-size:12px;font-weight:400">— failed the gauntlet (discipline, not findings)</span></h2>
+ <h2><span class="n">04</span> Rejected <span class="mut" style="font-family:var(--mono);font-size:12px;font-weight:400">— failed the gauntlet (discipline, not findings)</span></h2>
  <div class="card" style="font-family:var(--mono);font-size:12px;color:var(--mut);line-height:1.7">
    Bear-short sleeve · Donchian ensemble SSRN (OOS 0.73&lt;0.86) · AdaptiveTrend arXiv 2.41 (shorts+survivorship) · vol-targeting (double-counts) · funding market-timing (fade thesis false) · on-chain/liquidation (decayed) · XS-mom/lowvol/short-reversal (neg OOS) · RTN-Core rotational (0.53, killed) · HFT lead-lag AVAX +1523% (dies on fees) · halving/Q4 seasonality (small caveated tilt only). <b class="amber" style="color:var(--amber)">Frontier exhausted — gains now come from construction + execution, not new signals.</b>
  </div>
 
- <footer>§1 = curve-derived (full/recent, in-sample). §2 = real walk-forward OOS, the trustworthy panel. Backtests, not live · gross of funding · plan real DD ≈ 2× · not financial advice · Lemonef/Trade</footer>
+ <footer>Full/Recent = curve-derived (in-sample). OOS = real walk-forward (trustworthy). Backtests, not live · gross of funding · plan real DD ≈ 2× · not financial advice · Lemonef/Trade</footer>
 </div>
 <script>
  const DATA=__DATA__; let L="1x", P="recent", key="cagr", dir=-1, sel=DATA[0];
  const f=(v,s="")=>{if(v===null||v===undefined||Number.isNaN(v))return `<span style="color:var(--dim)">—</span>`;const c=v>0?"pos":(v<0?"neg":"");return `<span class="${c}">${v}${s}</span>`};
  const fp=(v,s="")=>(v===null||v===undefined||Number.isNaN(v))?`<span style="color:var(--dim)">—</span>`:v+s;  // plain, no sign-color
- function cell(s,lev){const lv=s.levels[lev]; return lv?lv[P]:null;}
+ function projLev(p,lev){const n=lev==='all'?1:(parseInt(lev)||1);if(n<=1)return p;
+   const cagr=Math.round((n*p.cagr-(n-1)*10)*10)/10, maxdd=Math.round(p.maxdd*n*10)/10;
+   return Object.assign({},p,{cagr,maxdd,calmar:maxdd?Math.round(cagr/Math.abs(maxdd)*100)/100:null,_proj:true});}
+ function cell(s,lev){ if(P==='oos'){ return s.oos?projLev(s.oos,lev):null; } const lv=s.levels[lev]; return lv?lv[P]:null; }
  function monthlyGrid(series){
   if(!series||series.length<3) return '';
   const m={};
@@ -231,7 +240,7 @@ HTML = r"""<!doctype html>
  function draw(s,lv){
   const isR=s.category==="research";
   const L2=isR?"1x":(lv||(L==="all"?"1x":L)); const k=cell(s,L2);
-  document.getElementById("nm").textContent=s.name+"  @"+L2+(isR?"  (1× only)":"")+"  ·  "+(P==="recent"?"2022→now":"2018–26");
+  document.getElementById("nm").textContent=s.name+"  @"+L2+(isR?"  (1× only)":"")+"  ·  "+(P==="oos"?"OOS walk-forward":(P==="recent"?"2022→now":"2018–26"));
   document.getElementById("bnote2").textContent=(k&&k.ruin?"⛔ LIQUIDATED at "+L2+" — equity hit zero. Not survivable. ":"")+(s.note||"");
   if(!k){return;}
   document.getElementById("kc").innerHTML=f(k.cagr,"%");
@@ -239,7 +248,7 @@ HTML = r"""<!doctype html>
   document.getElementById("kso").innerHTML=f(k.sortino);
   document.getElementById("kca").innerHTML=f(k.calmar);
   document.getElementById("kd").innerHTML=f(k.maxdd,"%");
-  document.getElementById("kw").textContent=(k.win||0)+"%";
+  document.getElementById("kw").textContent=((k.wr!=null?k.wr:k.win)||0)+"%";
   document.getElementById("kgp").innerHTML=f(k.gtp);
   document.getElementById("kul").innerHTML=fp(k.ulcer,"%");
   document.getElementById("kcv").innerHTML=f(k.cvar,"%");
@@ -259,45 +268,40 @@ HTML = r"""<!doctype html>
   pts.forEach((v,i)=>{i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v))});x.stroke();
  }
  function render(){
-  document.getElementById("periodbanner").innerHTML = P==="recent"
-    ? "✅ <b>Recent (2022→now)</b> — the 2018–21 explosion removed. Closest backtest proxy for the current regime, but STILL backtest + gross. The real forward truth is the live paper bot on the <b>Strategy Book</b>."
-    : "⚠ <b>Full (2018–26)</b> — includes the 2020–21 mega-bull that won't repeat. Optimistic CEILING; do NOT use for forward expectation. Flip to <b>Recent</b> for the honest-er view.";
+  document.getElementById("periodbanner").innerHTML = P==="oos"
+    ? "✅ <b>OOS · walk-forward</b> — train-past→test-future = THE trustworthy panel. Only the validated bots (trend core + .55/.25/.20 blend). PF/Win/$ shown where the bot places discrete trades. 2×/3× = projected (Sharpe flat, CAGR×N−fin, DD×N)."
+    : P==="recent"
+    ? "✅ <b>Recent (2022→now)</b> — 2018–21 explosion removed; current-regime proxy, but STILL in-sample + gross. Real forward truth = the live bot on the <b>Strategy Book</b>."
+    : "⚠ <b>Full (2018–26)</b> — includes the 2020–21 mega-bull. Optimistic CEILING; not for forward expectation. Flip to <b>OOS</b> for the trustworthy one.";
   const th=document.getElementById("th"),tb=document.querySelector("#t tbody");
-  th.innerHTML=`<tr><th class="l" data-k="name">Strategy</th><th data-k="cagr">CAGR%</th><th data-k="sharpe">Sharpe*</th><th data-k="calmar">Calmar</th><th data-k="maxdd">MaxDD%</th><th data-k="win">Win%</th><th class="l" data-k="category">Type</th></tr>`;
+  th.innerHTML=`<tr><th class="l" data-k="name">Strategy</th><th data-k="cagr">CAGR%</th><th data-k="sharpe">Sharpe</th><th data-k="sortino">Sortino</th><th data-k="calmar">Calmar</th><th data-k="maxdd">MaxDD%</th><th data-k="tstat">t-stat</th><th data-k="pf">PF</th><th data-k="win">Win%</th><th data-k="gtp">Gain/Pain</th><th data-k="ulcer">Ulcer</th><th data-k="cvar">CVaR</th><th data-k="skew">Skew</th><th data-k="kurt">Kurt</th><th data-k="kratio">K-rat</th><th data-k="muw">Mo u/w</th><th class="l" data-k="category">Type</th></tr>`;
   let rows=[];
-  if(L==="all"){ DATA.forEach(s=>(s.category==="research"?["1x"]:["1x","2x","3x"]).forEach(lv=>{const k=cell(s,lv);if(k)rows.push({label:s.name+" ("+lv+")",cagr:k.cagr,sharpe:k.sharpe,calmar:k.calmar,maxdd:k.maxdd,win:k.win||0,category:s.category,s:s,lv:lv});}));}
-  else { rows=DATA.map(s=>{
-    if(s.category==="research" && L!=="1x") return {label:s.name,cagr:null,sharpe:null,calmar:null,maxdd:null,win:null,category:s.category,s:s,lv:"1x"};
-    const k=cell(s,L);return {label:s.name,cagr:k.cagr,sharpe:k.sharpe,calmar:k.calmar,maxdd:k.maxdd,win:k.win||0,category:s.category,s:s,lv:L};});}
-  rows.sort((a,b)=>{let av=key==="name"?a.label:(key==="category"?a.category:a[key]),bv=key==="name"?b.label:(key==="category"?b.category:b[key]);
-    if(typeof av==="string")return av.localeCompare(bv)*dir;
-    av=(av==null||Number.isNaN(av))?-Infinity:av; bv=(bv==null||Number.isNaN(bv))?-Infinity:bv; return (av-bv)*dir;});
+  if(P==='oos'){
+    DATA.filter(s=>s.oos).forEach(s=>{const lv=(L==='all'?'1x':L);const k=cell(s,lv);if(k)rows.push({label:s.name,k,category:s.category,s,lv});});
+  } else if(L==="all"){
+    DATA.forEach(s=>{ if(!s.levels||!Object.keys(s.levels).length)return; (s.category==="research"?["1x"]:["1x","2x","3x"]).forEach(lv=>{const k=cell(s,lv);if(k)rows.push({label:s.name+" ("+lv+")",k,category:s.category,s,lv});});});
+  } else {
+    DATA.forEach(s=>{ if(!s.levels||!Object.keys(s.levels).length)return; if(s.category==="research"&&L!=="1x"){rows.push({label:s.name,k:null,category:s.category,s,lv:"1x"});return;} const k=cell(s,L);if(k)rows.push({label:s.name,k,category:s.category,s,lv:L});});
+  }
+  const kv=r=> key==="name"?r.label : key==="category"?r.category : (r.k?r.k[key]:null);
+  rows.sort((a,b)=>{let av=kv(a),bv=kv(b); if(typeof av==="string")return (av||"").localeCompare(bv||"")*dir; av=(av==null||Number.isNaN(av))?-Infinity:av; bv=(bv==null||Number.isNaN(bv))?-Infinity:bv; return (av-bv)*dir;});
+  const na='<span class="mut">n/a</span>';
+  const cells=k=> !k ? '<td colspan="15" class="mut">— no data this period</td>'
+    : `<td>${f(k.cagr,'%')}</td><td>${f(k.sharpe)}</td><td>${f(k.sortino)}</td><td>${f(k.calmar)}</td><td class="neg">${f(k.maxdd,'%')}</td>`
+     +`<td>${f(k.tstat)}</td><td>${k.pf!=null?f(k.pf):na}</td><td>${(k.wr!=null||k.win!=null)?((k.wr!=null?k.wr:k.win)+'%'):na}</td>`
+     +`<td>${f(k.gtp)}</td><td>${fp(k.ulcer,'%')}</td><td>${f(k.cvar,'%')}</td><td style="color:${k.skew<0?'var(--dn)':'var(--up)'}">${fp(k.skew)}</td><td>${fp(k.kurt)}</td><td>${f(k.kratio)}</td><td>${k.muw!=null?k.muw+'mo':'—'}</td>`;
   tb.innerHTML="";
   rows.forEach(r=>{const tr=document.createElement("tr");tr.className="row"+(sel===r.s?" sel":"");
-   tr.innerHTML=`<td class="l">${r.label}</td><td>${f(r.cagr)}</td><td>${f(r.sharpe)}</td><td>${f(r.calmar)}</td><td>${f(r.maxdd)}</td><td>${r.win==null?'<span style="color:var(--dim)">—</span>':r.win}</td><td class="l"><span class="tag ${r.category}">${r.category}</span></td>`;
-   tr.onclick=()=>{sel=r.s; draw(r.s, r.lv); render();};tb.appendChild(tr);});
+   tr.innerHTML=`<td class="l">${r.label}</td>`+cells(r.k)+`<td class="l"><span class="tag ${r.category}">${r.category}</span></td>`;
+   tr.onclick=()=>{sel=r.s; draw(r.s,r.lv); render();};tb.appendChild(tr);});
   document.querySelectorAll("#t th").forEach(t=>{if(t.dataset.k)t.onclick=()=>{const kk=t.dataset.k;dir=(kk===key)?-dir:-1;key=kk;render();};});
-  document.getElementById("warn").textContent = (L==="all") ? "ALL view: one row per strategy × leverage — click a header to sort. 2×/3× include ~10% financing; DD scales, >2× risks liquidation."
-    : (L!=="1x" ? "⚠ "+L+" includes ~10% financing. Plan ~2× this maxDD live; >2× risks liquidation." : "");
+  document.getElementById("warn").textContent = P==='oos' ? "OOS = walk-forward (trend) / full-sample book (blend). PF/Win/$ only where discrete trades exist. 2×/3× projected. Skew & K-ratio = consistency/tail shape."
+    : (L==="all") ? "ALL: one row per strategy × leverage. 2×/3× include ~10% financing; DD scales, >2× risks liquidation."
+    : (L!=="1x" ? "⚠ "+L+" includes ~10% financing. Plan ~2× this maxDD; >2× risks liquidation." : "");
  }
- document.querySelectorAll("#per button").forEach(b=>b.onclick=()=>{P=b.dataset.p;document.querySelectorAll("#per button").forEach(x=>{x.classList.remove("on");x.classList.toggle("honest",x.dataset.p==="recent");});b.classList.add("on");render();draw(sel);});
+ document.querySelectorAll("#per button").forEach(b=>b.onclick=()=>{P=b.dataset.p;document.querySelectorAll("#per button").forEach(x=>{x.classList.remove("on");x.classList.toggle("honest",x.dataset.p==="recent"||x.dataset.p==="oos");});b.classList.add("on");render();draw(sel);});
  document.querySelectorAll("#lev button").forEach(b=>b.onclick=()=>{L=b.dataset.l;document.querySelectorAll("#lev button").forEach(x=>x.classList.remove("on"));b.classList.add("on");render();draw(sel);});
  render();draw(sel);
-
- // --- §2 OOS full panel (real, from backtest/panel_dump.py → lab_panel.json) ---
- fetch('./lab_panel.json?ts='+Date.now()).then(r=>r.json()).then(P=>{
-  const nb=(v,s='')=>(v==null)?'<span class="mut">—</span>':v+s;
-  const na='<span class="mut">n/a</span>';
-  const row=(name,k,tr)=>`<tr><td class="l"><b>${name}</b></td><td>${nb(k.sharpe)}</td><td>${nb(k.sortino)}</td>
-    <td>${nb(k.calmar)}</td><td class="neg">${nb(k.maxdd,'%')}</td><td>${nb(k.tstat)}</td>
-    <td>${tr?nb(k.pf):na}</td><td>${tr?nb(k.wr,'%'):na}</td><td>${tr?nb(k.exp,''):na}</td>
-    <td>${nb(k.gtp)}</td><td>${nb(k.ulcer,'%')}</td><td>${nb(k.cvar,'%')}</td>
-    <td style="color:${k.skew<0?'var(--dn)':'var(--up)'}">${nb(k.skew)}</td><td>${nb(k.kurt)}</td><td>${nb(k.muw,'mo')}</td></tr>`;
-  document.getElementById('oosbody').innerHTML = row('Trend core (WF OOS, 4H)',P.trend,true) + row('Crypto blend .55/.25/.20 (full, daily)',P.blend_full,false);
-  document.getElementById('oosnote').innerHTML =
-   'Real OOS, no fabrication. <b>Trend core</b>: walk-forward Sharpe <b>0.75</b> (below the old 0.86) · trade-level PF 1.3 / Win 33% / t-stat 1.55 (marginal) · <b style="color:var(--dn)">negative skew −0.67 + fat tails</b> = crash-exposed → why it isn\'t run alone. '+
-   '<b>Blend</b>: <b style="color:var(--up)">positive skew +0.83</b> (flush+crashreb profit from crashes) · t-stat <b>3.67</b> (strong). Blend has no discrete trades (return-stream combo) so PF/Win/$ = n/a. Blend Sharpe window-sensitive: 1.28 (conservative weight-search OOS) → 1.58 full (shown) → 1.7 recent.';
- }).catch(e=>{document.getElementById('oosbody').innerHTML='<tr><td colspan="15" class="mut" style="padding:14px">panel data not found — run backtest/panel_dump.py</td></tr>';});
 </script>
 <script type="module" src="./anim.js"></script>
 </body></html>"""
