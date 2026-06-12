@@ -95,6 +95,19 @@ _None of these change the trading logic — they only fire on bad-data/bugs/fail
 
 **Soft-stop decision (locked):** (a) 4h soft-stop during paper/shadow — simple + keeps paper honest vs the 4h-bar backtest. **(b) resting stop orders at the exchange become mandatory the moment real money is funded** (listed in the go-live checklist below), so by the time a cent is live, stops are 24/7 — not dependent on the 4h cadence. Paper never runs (b) (it would diverge from the validated numbers).
 
+## Real-money operational safety (beyond the in-code guards)
+These are NOT code guards — they're the operational/key/ops layer. **The first one is the single most important real-money protection.**
+- **🔑 API key = TRADE + READ only, WITHDRAW PERMANENTLY DISABLED.** Even if the key leaks (GitHub breach, log slip), an attacker **cannot move your funds out** — only trade within the account. This is non-negotiable. Also: no margin/futures permission on the key (reinforces spot-only at the key level).
+- **Secrets in GitHub Actions encrypted secrets only** — never in code, never committed, never logged. The bot reads keys from env; a config-validator refuses to run `LIVE` if keys are absent/malformed.
+- **IP allowlist the key** if feasible (GitHub Actions IPs rotate → may need a static-IP proxy, or accept no-IP-lock *because* withdraw is already disabled).
+- **Dead-man's switch / heartbeat:** the bot pings each run; a separate monitor alerts if **no run in >X hours** (a silently-failed GitHub Action = you'd never know the bot stopped managing real positions).
+- **Emergency-flatten procedure:** a tested, one-command `flatten.py` (sell all to stablecoin) + written manual steps, so "get me out NOW" doesn't require debugging at midnight.
+- **Exposure caps (portfolio-level):** max % of account in one coin, max # open positions, max total deployed (idle-cash floor). Separate from per-order max-notional.
+- **Config validation at startup:** refuse to run on a half-valid config (e.g. `LIVE=True` + no keys, or `DRY_RUN` unset) — fail loud, do nothing.
+- **Dependency pinning:** `requirements.txt` with pinned versions (ccxt, pandas, numpy, requests) so an auto-update can't silently break or compromise the live bot.
+- **Deliberate go-live friction:** flipping `LIVE=True` is a separate, dated commit (not bundled with code changes) + a cooldown — no same-impulse "let's go live right now."
+- **Audit trail:** every decision + order appended to an immutable log (`trades.csv` + a decision log) for post-mortems.
+
 ## Shadow mode + go-live exit criteria (written NOW, not by vibes)
 LiveBroker runs in dry-run alongside the paper bot for weeks, logging intended orders + measuring **real** tradeable price vs the 8bps assumption. Graduate to a live flip ONLY when ALL hold:
 - ≥ N intended orders logged (enough to be meaningful — set N when first orders appear).
@@ -104,6 +117,11 @@ LiveBroker runs in dry-run alongside the paper bot for weeks, logging intended o
 - AND the separate strategy gauntlet cleared (3-6mo paper + one regime change survived).
 
 ### Go-live checklist (all required BEFORE the first real order)
+- [ ] **🔑 Binance API key created with WITHDRAW DISABLED + trade/read only + no margin** (the #1 protection).
+- [ ] Keys in GitHub Actions secrets; config-validator refuses `LIVE` without valid keys.
+- [ ] Dead-man's-switch heartbeat alert wired (alert if no run in >X h).
+- [ ] `flatten.py` emergency exit tested in shadow.
+- [ ] Exposure caps + dependency pin (`requirements.txt`) in place.
 - [ ] Reconcile-or-halt built + tested (deliberately edit JSON → bot halts).
 - [ ] **(b) Resting exchange stop-orders wired** — 24/7 gap protection, replaces the 4h soft-stop for real money.
 - [ ] Run drawdown breaker + max-notional cap (the v1.1 guards) in place.
