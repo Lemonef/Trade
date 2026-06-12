@@ -75,6 +75,26 @@ Strategy logic untouched; sizing + execution both pluggable. The bot picks its b
 6. **Open-orders assertion:** at run start, `get_open_orders()` must be empty; non-empty → abort (free corruption detector).
 7. **`HALT` kill switch:** an env/file flag checked first thing each run → bot does nothing. The phone-at-midnight off button that isn't "delete the API key."
 
+## Failure modes & guards (every "what if X" gets a named guard)
+_None of these change the trading logic — they only fire on bad-data/bugs/failures. Proven strat-neutral by the byte-identical migration diff (any guard that alters a historical result = fix the guard, not the strat)._
+
+| Failure mode | Guard | v1? | Strat-impact |
+|---|---|---|---|
+| Duplicate buy on a retried run | Idempotent `client_order_id` (#3) | v1 | none (only on retry) |
+| Bot "forgets" it traded / state lost | Reconcile-or-halt (#4) | v1 | none (only on mismatch) |
+| **Glitch tick → fake breakout (buy) or fake stop (sell)** | **Bad-tick gate:** reject a bar deviating wildly from prior close BEFORE it drives a signal (same idea as the RCAT $14.98 stock fix) | v1 | removes false signals (improves, doesn't break) |
+| Intrabar whipsaw | **Closed-bar only:** act on last *finished* 4h bar (`i=-2`), never the forming bar — locked as a rule | v1 | none (already does this) |
+| **Noisy signal → buy-then-instant-sell churn** | **Anti-flip:** block enter+exit of the same coin on the SAME bar from a tick. Designed to NOT delay a legit *next-bar* stop. | v1 | none on legit moves (tuned + diff-verified) |
+| A bug tries to trade everything at once | **Per-run trade cap = ALERT, not hard-block** (set above the legit crash-rebound mass-entry max) → halts only on clearly-broken behavior | v1 | none (sits above legit max) |
+| Sizing-math bug dumps account into one coin | **Max-notional-per-order/coin** sanity cap | v1.1 | none (above legit size) |
+| Bad / stale / gapped price data | **Data-quality gate:** fetch-fail or stale/missing bars → skip run, trade nothing (DATA-UNAVAILABLE) | v1 | none (skips only on bad data) |
+| Order call errors / times out | **Order-failure confirmation:** never assume — query by `client_order_id` for true state | v1 | none |
+| Crash mid-state-write corrupts the book | **Atomic write:** temp file → rename | v1 | none |
+| Cascading bug / flash crash drains equity | **Run drawdown breaker:** equity drop >X%/run → halt + alert | v1.1 | none (only on extreme) |
+| **Price gaps BELOW stop between 4h runs** | **Soft-stop = (a)** 4h-check for paper/shadow (matches the validated backtest); **(b) resting exchange stop-orders = REQUIRED before the first real order** → 24/7 gap protection while the bot sleeps | (a) v1 / **(b) = go-live gate** | (a) matches backtest; (b) added only at real-money, never on paper |
+
+**Soft-stop decision (locked):** (a) 4h soft-stop during paper/shadow — simple + keeps paper honest vs the 4h-bar backtest. **(b) resting stop orders at the exchange become mandatory the moment real money is funded** (listed in the go-live checklist below), so by the time a cent is live, stops are 24/7 — not dependent on the 4h cadence. Paper never runs (b) (it would diverge from the validated numbers).
+
 ## Shadow mode + go-live exit criteria (written NOW, not by vibes)
 LiveBroker runs in dry-run alongside the paper bot for weeks, logging intended orders + measuring **real** tradeable price vs the 8bps assumption. Graduate to a live flip ONLY when ALL hold:
 - ≥ N intended orders logged (enough to be meaningful — set N when first orders appear).
@@ -82,6 +102,15 @@ LiveBroker runs in dry-run alongside the paper bot for weeks, logging intended o
 - 0 reconcile mismatches across the shadow window.
 - Measured slippage+fee < the assumed 8bps (or paper P&L re-derated to the real number).
 - AND the separate strategy gauntlet cleared (3-6mo paper + one regime change survived).
+
+### Go-live checklist (all required BEFORE the first real order)
+- [ ] Reconcile-or-halt built + tested (deliberately edit JSON → bot halts).
+- [ ] **(b) Resting exchange stop-orders wired** — 24/7 gap protection, replaces the 4h soft-stop for real money.
+- [ ] Run drawdown breaker + max-notional cap (the v1.1 guards) in place.
+- [ ] 3-lock live gate + HALT kill switch verified.
+- [ ] Shadow exit criteria above all green.
+- [ ] Strategy gauntlet cleared (3-6mo paper + a regime change survived).
+- [ ] Start with a tiny real stake; scale only after live ≈ paper.
 
 ## Migration / correctness
 - Pure-refactor checkpoint: after extracting `PaperBroker`, the bot's output (state JSON, equity CSVs, data.json) must be **identical** to pre-refactor on the same input → diff-verified before anything else.
