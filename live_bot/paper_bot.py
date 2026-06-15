@@ -64,13 +64,28 @@ def load_state(a):
     p=spath(a)
     if p.exists(): return json.loads(p.read_text())
     sub=START/len(COINS)
-    return {"coins":{c:{"cash":sub,"units":0.0,"entry":0.0,"stop":0.0,"peak":0.0,"held":0,"size":0.0} for c in COINS}}
+    return {"coins":{c:{"cash":sub,"units":0.0,"entry":0.0,"stop":0.0,"peak":0.0,"trough":0.0,"held":0,"bars":0,"size":0.0} for c in COINS}}
 def log_trade(row):
     new=not TRADELOG.exists()
     with open(TRADELOG,"a",newline="") as f:
         w=csv.writer(f)
         if new: w.writerow(["time","acct","coin","action","price","units","reason","pnl"])
         w.writerow(row)
+TRADEDETAIL=HERE/"trades_detail.csv"  # analysis-grade per-trade close-log: R-multiple, MAE/MFE, hold (additive to trades.csv)
+def log_detail(acct_,coin,entry,exit_,stop,units,hold,pnl,peak,trough,reason):
+    # NEVER let logging break the trade loop — fully guarded. R = pnl / initial-risk((entry-stop)*units);
+    # MFE/MAE = best/worst excursion vs entry during the hold (where stops hurt / how much was left on the table).
+    try:
+        risk=units*(entry-stop) if (entry>0 and stop>0 and entry>stop) else 0.0
+        Rm=round(pnl/risk,3) if risk>0 else ""
+        mfe=round((peak/entry-1)*100,2) if (entry and peak) else ""
+        mae=round((trough/entry-1)*100,2) if (entry and trough) else ""
+        new=not TRADEDETAIL.exists()
+        with open(TRADEDETAIL,"a",newline="") as f:
+            w=csv.writer(f)
+            if new: w.writerow(["time","acct","coin","entry","exit","stop","units","hold_bars","pnl","R_multiple","MFE_pct","MAE_pct","reason"])
+            w.writerow([now(),acct_,coin,round(entry,6),round(exit_,6),round(stop,6) if stop else "",round(units,6),hold,round(pnl,2),Rm,mfe,mae,reason])
+    except Exception: pass
 def append_eq(a,total):
     p=epath(a); new=not p.exists()
     with open(p,"a",newline="") as f:
@@ -362,48 +377,53 @@ def cycle():
             # trend
             cs=states[acct("trend",L)]["coins"][c]
             if cs["units"]>0:
-                cs["peak"]=max(cs["peak"],high)
+                cs["peak"]=max(cs["peak"],high); cs["trough"]=min(cs.get("trough") or cs["entry"],low); cs["bars"]=cs.get("bars",0)+1
                 if trend_exit or low<cs["stop"]:
                     pnl=cs["units"]*price*(1-COST)-cs["units"]*cs["entry"]*(1+COST); cs["cash"]+=cs["units"]*price*(1-COST)
                     log_trade([now(),acct("trend",L),c,"SELL",round(price,6),round(cs["units"],6),"exit",round(pnl,2)])
+                    log_detail(acct("trend",L),c,cs["entry"],price,cs.get("stop",0.0),cs["units"],cs.get("bars",0),pnl,cs.get("peak",0.0),cs.get("trough",0.0),"exit")
                     if L==1: actions.append(f"trend {c} EXIT")
-                    cs.update(units=0.0,entry=0.0,stop=0.0,peak=0.0)
+                    cs.update(units=0.0,entry=0.0,stop=0.0,peak=0.0,trough=0.0,bars=0)
             elif trend_buy:
                 sd=av*ATR_STOP; u=L*(cs["cash"]*RISK_PCT/100)/sd; u=min(u,cs["cash"]*0.95*L/price)
                 if u>0:
-                    cs["cash"]-=u*price*(1+COST); cs.update(units=u,entry=price,stop=price-sd,peak=high)
+                    cs["cash"]-=u*price*(1+COST); cs.update(units=u,entry=price,stop=price-sd,peak=high,trough=low,bars=0)
                     log_trade([now(),acct("trend",L),c,"BUY",round(price,6),round(u,6),"breakout",""])
                     if L==1: actions.append(f"trend {c} BUY")
             totals[acct("trend",L)]+=cs["cash"]+cs["units"]*price
             # flush
             fs=states[acct("flush",L)]["coins"][c]
             if fs["units"]>0:
+                fs["peak"]=max(fs.get("peak") or fs["entry"],high); fs["trough"]=min(fs.get("trough") or fs["entry"],low)
                 if high/fs["entry"]-1>=FL_TARGET or fs["held"]>=FL_MAXBARS:
                     pnl=fs["units"]*price*(1-COST)-fs["units"]*fs["entry"]*(1+COST); fs["cash"]+=fs["units"]*price*(1-COST)
                     log_trade([now(),acct("flush",L),c,"SELL",round(price,6),round(fs["units"],6),"bounce/timeout",round(pnl,2)])
+                    log_detail(acct("flush",L),c,fs["entry"],price,0.0,fs["units"],fs.get("held",0),pnl,fs.get("peak",0.0),fs.get("trough",0.0),"bounce/timeout")
                     if L==1: actions.append(f"flush {c} EXIT")
-                    fs.update(units=0.0,entry=0.0,held=0,size=0.0)
+                    fs.update(units=0.0,entry=0.0,held=0,size=0.0,peak=0.0,trough=0.0)
                 else: fs["held"]+=1
             elif flush_buy:
                 size=min(3.0,abs(r_prev)/0.10); u=L*size*fs["cash"]*0.95/price; u=min(u,fs["cash"]*0.95*L/price)  # clamp notional <= L*cash (size no longer stacks on L -> kills the ~8.5x over-leverage)
                 if u>0:
-                    fs["cash"]-=u*price*(1+COST); fs.update(units=u,entry=price,held=1,size=size)
+                    fs["cash"]-=u*price*(1+COST); fs.update(units=u,entry=price,held=1,size=size,peak=high,trough=low)
                     log_trade([now(),acct("flush",L),c,"BUY",round(price,6),round(u,6),f"flush {r_prev*100:.0f}%",""])
                     if L==1: actions.append(f"flush {c} BUY")
             totals[acct("flush",L)]+=fs["cash"]+fs["units"]*price
             # crashreb (BTC-wide crash -> buy alts; BTC itself excluded)
             xs=states[acct("crashreb",L)]["coins"][c]
             if xs["units"]>0:
+                xs["peak"]=max(xs.get("peak") or xs["entry"],high); xs["trough"]=min(xs.get("trough") or xs["entry"],low)
                 if high/xs["entry"]-1>=CR_TARGET or xs["held"]>=CR_MAXBARS:
                     pnl=xs["units"]*price*(1-COST)-xs["units"]*xs["entry"]*(1+COST); xs["cash"]+=xs["units"]*price*(1-COST)
                     log_trade([now(),acct("crashreb",L),c,"SELL",round(price,6),round(xs["units"],6),"bounce/timeout",round(pnl,2)])
+                    log_detail(acct("crashreb",L),c,xs["entry"],price,0.0,xs["units"],xs.get("held",0),pnl,xs.get("peak",0.0),xs.get("trough",0.0),"bounce/timeout")
                     if L==1: actions.append(f"crashreb {c} EXIT")
-                    xs.update(units=0.0,entry=0.0,held=0,size=0.0)
+                    xs.update(units=0.0,entry=0.0,held=0,size=0.0,peak=0.0,trough=0.0)
                 else: xs["held"]+=1
             elif btc_crash and c!="BTCUSDT":
                 u=L*xs["cash"]*0.95/price
                 if u>0:
-                    xs["cash"]-=u*price*(1+COST); xs.update(units=u,entry=price,held=1,size=1.0)
+                    xs["cash"]-=u*price*(1+COST); xs.update(units=u,entry=price,held=1,size=1.0,peak=high,trough=low)
                     log_trade([now(),acct("crashreb",L),c,"BUY",round(price,6),round(u,6),f"BTC crash {btc_r_prev*100:.0f}%",""])
                     if L==1: actions.append(f"crashreb {c} BUY")
             totals[acct("crashreb",L)]+=xs["cash"]+xs["units"]*price
