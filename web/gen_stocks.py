@@ -175,20 +175,24 @@ def main():
   document.getElementById("kf").textContent=h.flavor;
   const cv=document.getElementById("cv"),x=cv.getContext("2d"),W=cv.width,H=cv.height,P=52;
   x.clearRect(0,0,W,H); const s=h.series,n=s.length; if(!n)return;
-  const pts=s.map(p=>p[1]),mn=Math.min(...pts,h.entry),mx=Math.max(...pts,h.entry),rng=(mx-mn)||1;
-  const X=i=>P+i/(n-1)*(W-2*P),Y=v=>H-P-(v-mn)/rng*(H-2*P);
-  x.strokeStyle="#222c3d";x.fillStyle="#8a97aa";x.font="13px 'JetBrains Mono',monospace";
-  for(let g=0;g<=4;g++){const v=mn+rng*g/4,yy=Y(v);x.beginPath();x.moveTo(P,yy);x.lineTo(W-P,yy);x.stroke();x.fillText("$"+Math.round(v),6,yy+4);}
+  const pts=s.map(p=>p[1]),rmn=Math.min(...pts,h.entry),rmx=Math.max(...pts,h.entry);
+  // LOG y-scale: names that spike then crash (LEU 8x'd to $436) squish the actionable near-entry range into the bottom ~15% on a linear axis. Log spreads it out (3% pad).
+  const lmn=Math.log(rmn*0.97),lmx=Math.log(rmx*1.03),lrng=(lmx-lmn)||1;
+  const X=i=>P+i/(n-1)*(W-2*P),Y=v=>H-P-(Math.log(v)-lmn)/lrng*(H-2*P);
+  x.strokeStyle="#1c2532";x.fillStyle="#8a97aa";x.font="13px 'JetBrains Mono',monospace";
+  for(let g=0;g<=4;g++){const v=Math.exp(lmn+lrng*g/4),yy=Y(v);x.beginPath();x.moveTo(P,yy);x.lineTo(W-P,yy);x.stroke();x.fillText("$"+(v>=100?Math.round(v):v.toFixed(1)),6,yy+4);}
   x.fillText(s[0][0],P,H-16);x.textAlign="right";x.fillText(s[n-1][0],W-P,H-16);x.textAlign="left";
   x.strokeStyle="#e8a14b";x.setLineDash([5,4]);x.beginPath();x.moveTo(P,Y(h.entry));x.lineTo(W-P,Y(h.entry));x.stroke();x.setLineDash([]);
   x.fillStyle="#e8a14b";x.fillText("entry $"+h.entry,P+6,Y(h.entry)-6);
-  x.strokeStyle=h.pnl>=0?"#27d38a":"#ff5a6a";x.lineWidth=2;x.beginPath();
+  const col=h.pnl>=0?"#27d38a":"#ff5a6a";x.strokeStyle=col;x.lineWidth=2.2;x.beginPath();
   pts.forEach((v,i)=>{i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v))});x.stroke();
+  x.lineTo(X(n-1),H-P);x.lineTo(X(0),H-P);x.closePath();  // close to baseline -> subtle area fill for readability
+  const gr=x.createLinearGradient(0,0,0,H);gr.addColorStop(0,h.pnl>=0?"rgba(39,211,138,0.16)":"rgba(255,90,106,0.16)");gr.addColorStop(1,"rgba(0,0,0,0)");x.fillStyle=gr;x.fill();
   let ei=s.findIndex(p=>p[0]>=h.entry_date); if(ei<0)ei=n-1;
   x.fillStyle="#e8a14b";x.beginPath();x.arc(X(ei),Y(h.entry),6,0,7);x.fill();
   const tb=document.querySelector("#log tbody");
   let rows=`<tr><td class="mono">${h.entry_date}</td><td class="mono">BUY</td><td class="mono">$${h.entry}</td><td>${h.flavor}</td></tr>`;
-  rows+=`<tr><td class="mono">${s[n-1][0]}</td><td class="mono">mark</td><td class="mono">$${h.current}</td><td>${f(h.pnl,"% unrealized")}</td></tr>`;
+  rows+=`<tr><td class="mono">${s[n-1][0]}</td><td class="mono">mark (now)</td><td class="mono">$${h.current}</td><td>${f(h.pnl,"% unrealized — not sold")}</td></tr>`;
   tb.innerHTML=rows;
  }
  function list(){const L=document.getElementById("list");L.innerHTML="";
