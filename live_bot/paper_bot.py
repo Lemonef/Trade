@@ -205,32 +205,40 @@ def write_webdata(totals, states, btc_ok=True):
     except Exception:
         tabs.append({"name":"Diversified Blend (40/40/20) ★ core",
                      "levels":[{"lev":f"{L}x", **block(f"divblend_{L}x", [], START, derived=True)} for L in LEVELS]})
-    # Diversified Blend · 50/150 SMA regime ★ — NEW tab (additive, does NOT replace the Donchian Diversified Blend above).
-    # Same 40/40/20 (crypto/gold/cash) but the crypto leg is gated by a FASTER 50/150 SMA regime (R3 backtest free-upgrade:
-    # beat canonical 100/200 SMA in 4/5 anchored OOS folds on BTC+PAXG+ETH; weaker in the 2026-bear regime). Forward-tracked
-    # here to paper-test it live before any decision to change the real trend leg. Regime on 300/900 4h-bars = 50d/150d.
+    # Regime A/B forward-test (CLEAN) — FIXED 2026-06-15. The OLD "Diversified Blend · 50/150" tab DOUBLE-GATED:
+    # it masked the already-200MA+Donchian-gated TREND-SLEEVE returns AGAIN with 50/150 (intersection), so it tested
+    # "trend AND 50/150", NOT "50/150 INSTEAD OF 200MA". Now both tabs gate RAW BTC returns PURELY by their own regime MA,
+    # so 50/150 vs canonical 100/200 differ ONLY by the window = a faithful live A/B of the R3 free-upgrade. Mirrors the
+    # backtest base (BTC×regime + gold + cash). 4h bars: 300/900 = 50d/150d ; 600/1200 = 100d/200d (daily-equiv). shift(1)=no lookahead.
     try:
-        d5050=[]
         if len(ts)>1:
             times=[r[0] for r in ts]; tr=rets(ts)
             pc=fetch("PAXGUSDT",limit=len(ts)+5)["c"].pct_change().fillna(0).tolist()
             gr=(pc[-len(tr):]+[0.0]*len(tr))[:len(tr)] if len(pc)>=len(tr) else [0.0]*len(tr)
-            bc=fetch("BTCUSDT",limit=1000)["c"]
-            reg=((bc>bc.rolling(300).mean())&(bc>bc.rolling(900).mean())).shift(1).fillna(False).tolist()  # 50d/150d-equiv, lagged (no lookahead)
-            reg=(([False]*len(tr))+reg)[-len(tr):]                          # align regime to the tail of the cycle stream
-            for L in LEVELS:
-                eqb=START; ser=[[times[0],START]]
-                for i in range(len(tr)):
-                    crr=tr[i] if reg[i] else 0.0                            # crypto leg held only when BTC>50&150 SMA, else cash
-                    eqb*=(1+L*(0.4*crr+0.4*gr[i]))                          # +0.2 cash @ 0%
-                    ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
-                d5050.append({"lev":f"{L}x", **block(f"divblend5050_{L}x", ser, eqb, derived=True)})
+            bc=fetch("BTCUSDT",limit=1300)["c"]                              # >=1200 bars so the 200d (1200-bar) MA is valid on the tail
+            btc_ret=bc.pct_change().fillna(0)
+            def regime_ab(label,key,fast,slow):
+                try:
+                    reg=((bc>bc.rolling(fast).mean())&(bc>bc.rolling(slow).mean())).shift(1).fillna(False)  # lagged, no lookahead
+                    cr=(btc_ret*reg.astype(float)).tolist()                  # RAW BTC return, 0 when regime OFF — CLEAN swap (no double-gate)
+                    cr=(([0.0]*len(tr))+cr)[-len(tr):]                        # align to the cycle tail
+                    lv=[]
+                    for L in LEVELS:
+                        eqb=START; ser=[[times[0],START]]
+                        for i in range(len(tr)):
+                            eqb*=(1+L*(0.4*cr[i]+0.4*gr[i]))                  # 40% regime-gated-BTC + 40% gold + 20% cash
+                            ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
+                        lv.append({"lev":f"{L}x", **block(f"{key}_{L}x", ser, eqb, derived=True)})
+                    tabs.append({"name":label,"levels":lv})
+                except Exception:
+                    tabs.append({"name":label,"levels":[{"lev":f"{L}x", **block(f"{key}_{L}x", [], START, derived=True)} for L in LEVELS]})
+            regime_ab("Regime A/B · 50/150 SMA (clean) ★","reg50150",300,900)
+            regime_ab("Regime A/B · canonical 100/200 SMA (clean)","reg100200",600,1200)
         else:
-            d5050=[{"lev":f"{L}x", **block(f"divblend5050_{L}x", [], START, derived=True)} for L in LEVELS]
-        tabs.append({"name":"Diversified Blend · 50/150 SMA ★ R3 free-upgrade","levels":d5050})
+            for label,key in [("Regime A/B · 50/150 SMA (clean) ★","reg50150"),("Regime A/B · canonical 100/200 SMA (clean)","reg100200")]:
+                tabs.append({"name":label,"levels":[{"lev":f"{L}x", **block(f"{key}_{L}x", [], START, derived=True)} for L in LEVELS]})
     except Exception:
-        tabs.append({"name":"Diversified Blend · 50/150 SMA ★ R3 free-upgrade",
-                     "levels":[{"lev":f"{L}x", **block(f"divblend5050_{L}x", [], START, derived=True)} for L in LEVELS]})
+        pass
     # Diversified Blend + CPPI floor ★ risk-off — NEW tab (additive). Path-dependent drawdown floor on the 40/40/20 blend
     # (R3 backtest special-case: HALVES CAGR but floors maxDD to ~-6%; floor_frac 0.90, m 5, gross<=1 -> no financing).
     # Causal: exposure e_t from PRE-cycle equity vs trailing 0.90*peak (de-risk toward cash as equity nears the floor).
