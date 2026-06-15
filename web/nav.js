@@ -4,6 +4,7 @@ const NAV = [
   { h: "index.html", t: "◆ Strategy Book" },
   { h: "stocks.html", t: "📈 Stocks — Spike Hunter" },
   { h: "board.html", t: "📊 Backtest Board — full panel + gauntlet" },
+  { h: "backtest-spike.html", t: "🎯 Backtest Spike — framework validation" },
 ];
 (function () {
   const cur = location.pathname.split("/").pop() || "index.html";

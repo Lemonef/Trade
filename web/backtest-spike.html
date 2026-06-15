@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backtest Spike — framework validation</title>
+<link rel="stylesheet" href="./style.css">
+<style>
+ .wrap{max-width:1100px}
+ table.bt{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0 4px}
+ table.bt th,table.bt td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;font-family:var(--mono)}
+ table.bt th{color:var(--mut);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase}
+ table.bt td.l,table.bt th.l{text-align:left}
+ .pos{color:var(--up)} .neg{color:var(--dn)} .amb{color:var(--amber)}
+ .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:6px 0 14px}
+ .kpi{background:var(--ink2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+ .kpi .k{font-family:var(--mono);color:var(--mut);font-size:10px;letter-spacing:.1em;text-transform:uppercase} .kpi .v{font-family:var(--mono);font-size:18px;font-weight:700;margin-top:2px}
+ h2{font-family:var(--sans);font-size:17px;margin:24px 0 4px} .sub{font-size:12px;color:var(--mut);margin:0 0 8px}
+ ul.find{font-size:13px;line-height:1.55;max-width:920px} ul.find li{margin:5px 0}
+ .banner{border-radius:10px;padding:10px 14px;margin:0 0 12px;max-width:940px;font-size:12.5px;line-height:1.5}
+ .banner.warn{border-left:3px solid var(--warn);background:rgba(244,184,96,.06);color:#e8c98a}
+</style>
+</head>
+<body>
+<div class="wrap">
+ <p class="eyebrow">Validation · Discretionary framework</p>
+ <h1>Backtest <span class="thin">Spike</span></h1>
+ <p class="lede">Can't backtest a discretionary catalyst framework mechanically — so this is a <b>blind walkthrough</b>: pick real past setups, enrich each with an <b>as-of-date catalyst packet</b> (ticker masked, future hidden), score <b>/6 + ENTER/WATCH/DROP</b> blind, then reveal the forward outcome. Metric = tradeable first-touch <b>+40% target before −25% stop</b> over 365d (PEAK = max gain in window, shown as context). Tool: <span style="font-family:var(--mono)">tools/blind_walkthrough.py</span> in SecondBrain.</p>
+ <div id="nav"></div>
+ <script src="./nav.js"></script>
+
+ <div class="banner warn">⚠️ <b>Promising but NOT validated.</b> A real, <b>replicated</b> entry-edge signal across 2 independent batches — but imperfect blinding (enricher knew the ticker), hand-built/era-biased pool, n&lt;50, and <b>zero live realized track record</b>. Honest label: keep paper-trading; don't bet real money yet.</div>
+
+ <div class="kpis">
+  <div class="kpi"><div class="k">Cases (catalyst-scored)</div><div class="v">~44</div></div>
+  <div class="kpi"><div class="k">Pool baseline capture</div><div class="v">~43%</div></div>
+  <div class="kpi"><div class="k">ENTER capture</div><div class="v pos">56%</div></div>
+  <div class="kpi"><div class="k">DROP stopped-out</div><div class="v">59%</div></div>
+ </div>
+
+ <h2>1 · Conviction ranks outcomes (combined n≈44, replicated)</h2>
+ <p class="sub">The /6 conviction monotonically orders forward outcomes — on capture AND on peak — across both independent batches.</p>
+ <table class="bt">
+  <tr><th class="l">Bucket (blind /6 + verdict)</th><th>n</th><th>Capture (+40/−25)</th><th>vs ~43% base</th><th>Avg PEAK (unbiased)</th></tr>
+  <tr><td class="l pos">ENTER (high conviction)</td><td>9</td><td class="pos">56%</td><td class="pos">+13pp</td><td class="pos">dominant — picks the monster spikes</td></tr>
+  <tr><td class="l">WATCH</td><td>18</td><td>44%</td><td>~base</td><td>middling (least-calibrated)</td></tr>
+  <tr><td class="l neg">DROP</td><td>17</td><td class="neg">35%</td><td class="neg">−8pp · 59% stopped</td><td>low — screens losers above chance</td></tr>
+ </table>
+
+ <h2>2 · The exit, not the entry, is the weak link</h2>
+ <p class="sub">Re-scoring the 9 ENTER cases (the framework's best calls) with the v3 daily-managed overlay (trail + trim + re-enter) vs simply buy-&amp;-hold, over 730d:</p>
+ <table class="bt">
+  <tr><th class="l">ENTER bucket (n=9)</th><th>Avg return</th><th>Avg maxDD</th><th>Beat buy-hold</th></tr>
+  <tr><td class="l">Buy-&amp;-hold (let it run)</td><td class="pos">+857%</td><td class="neg">−55%</td><td>—</td></tr>
+  <tr><td class="l amb">Mechanically managed (trim/trail)</td><td class="amb">+141%</td><td>−26%</td><td class="neg">1/9</td></tr>
+ </table>
+ <p class="sub">e.g. ASTS buy-hold <b>+2619%</b> → managed +226%; RKLB +1807% → +467%; NVDA +459% → +186%. The static −25% stop + trims <b>chop you out of the exact monster runs the entry nailed.</b></p>
+
+ <h2>3 · Findings</h2>
+ <ul class="find">
+  <li><b>Entry judgment is real.</b> ENTER cases have the highest capture AND by far the highest forward peaks — replicated across two batches. The /6 picks the winners.</li>
+  <li><b>Price-only is anti-signal.</b> A chart-only blind test (no catalyst) was ~anti-predictive — proving the edge is the <b>catalyst judgment</b>, not chart-reading.</li>
+  <li><b>★ Don't over-manage the winners.</b> On the monster spikes, mechanical trim/trail gives up ~700pp of return to save ~30pp of drawdown. Management must be <b>asymmetric</b>: small disaster-stop + thesis-break exit on losers, but <b>LET WINNERS RUN</b> on the ones working.</li>
+  <li><b>Scale-in beats all-in.</b> Starter-⅓-then-add-on-confirmation beat full-deploy-at-entry on BOTH return (+6pp) and drawdown (−24pp) — validating the existing sizing discipline.</li>
+  <li><b>WATCH is the noisy bucket</b> (~coin-flip) — tighten it or push more into DROP.</li>
+ </ul>
+
+ <h2>4 · To close the gap to "validated"</h2>
+ <ul class="find">
+  <li>Re-score the ENTER bucket on an asymmetric run-the-winners exit (done — see §2).</li>
+  <li>One more batch → <b>n≥50</b> with a <b>separate</b> blind judge (enricher ≠ judge) to kill the blinding caveat.</li>
+  <li>Build the pool from an <b>as-of-date screener</b> (not a hand-picked list) to kill selection bias.</li>
+  <li>Accrue a <b>live</b> realized track record (the forward verdict ledger) — the only unimpeachable proof.</li>
+ </ul>
+ <p class="sub" style="margin-top:18px">Full detail: SecondBrain <span style="font-family:var(--mono)">research/blind-v2-combined-2026-06-16.md</span> + <span style="font-family:var(--mono)">research/spike-backward-oos-design-2026-06-15.md</span>. ⚠ Not financial advice.</p>
+</div>
+</body>
+</html>
