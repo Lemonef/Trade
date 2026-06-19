@@ -26,7 +26,11 @@ CR_THR,CR_TARGET,CR_MAXBARS=-0.05,0.05,3            # crashreb: BTC<-5% bar -> b
 LEVELS=[1,2,3]; STRATS=["trend","flush","crashreb"]; BLEND_W=(0.7,0.3)
 BOOK_W=(0.55,0.25,0.20); BEAR_MULT=0.3              # Book v2 weights + bear-regime exposure scale
 REGLOG=HERE/"regime_log.csv"
-BASE="https://api.binance.com/api/v3/klines"
+# Binance market-data hosts, tried in order. data-api.binance.vision is the PUBLIC data mirror
+# that is NOT geo-blocked from cloud IPs — api.binance.com returns 451 from GitHub Actions (the
+# silent "0 trades — holding cash" freeze: every kline fetch was failing). Falls back for resilience.
+KLINE_HOSTS=["https://data-api.binance.vision","https://api.binance.com"]
+BASE=KLINE_HOSTS[0]+"/api/v3/klines"
 TG_TOKEN=os.environ.get("TG_TOKEN",""); TG_CHAT=os.environ.get("TG_CHAT","")
 
 def tg(m):
@@ -40,10 +44,16 @@ def epath(a): return HERE/f"equity_{a}.csv"
 TRADELOG=HERE/"trades.csv"
 
 def fetch(sym,limit=400):
-    r=requests.get(BASE,params={"symbol":sym,"interval":INTERVAL,"limit":limit},timeout=20); r.raise_for_status()
-    df=pd.DataFrame(r.json(),columns=["t","o","h","l","c","v","ct","q","n","tb","tq","ig"])
-    for x in ["o","h","l","c"]: df[x]=df[x].astype(float)
-    return df
+    last=None
+    for host in KLINE_HOSTS:                                  # vision mirror first (cloud-safe), then api.binance.com
+        try:
+            r=requests.get(host+"/api/v3/klines",params={"symbol":sym,"interval":INTERVAL,"limit":limit},timeout=20); r.raise_for_status()
+            df=pd.DataFrame(r.json(),columns=["t","o","h","l","c","v","ct","q","n","tb","tq","ig"])
+            for x in ["o","h","l","c"]: df[x]=df[x].astype(float)
+            return df
+        except Exception as e:
+            last=e; continue
+    raise last or RuntimeError(f"all kline hosts failed for {sym}")
 FUNDING_URL="https://fapi.binance.com/fapi/v1/fundingRate"
 def fetch_funding(sym,limit=500):  # perp funding rate history (8h periods)
     try:
