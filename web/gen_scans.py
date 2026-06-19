@@ -158,9 +158,10 @@ def main():
     DATA = json.dumps(scans, ensure_ascii=False)
     build_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     newest = scans[0]["date"] if scans else "no-data"
+    oldest = scans[-1]["date"] if scans else "no-data"
 
     page = (TEMPLATE.replace("__DATA__", DATA).replace("__COUNT__", str(len(scans)))
-                    .replace("__NEWEST__", newest).replace("__BUILT__", build_utc))
+                    .replace("__NEWEST__", newest).replace("__OLDEST__", oldest).replace("__BUILT__", build_utc))
     Path("web/scans.html").write_text(page, encoding="utf-8")
     _write_health("scans", {"built_utc": build_utc, "newest_report": newest, "n_reports": len(scans),
                             "ok": bool(scans)})
@@ -174,9 +175,14 @@ TEMPLATE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <style>
  .scancols{display:flex;gap:18px;align-items:flex-start}
  .side{flex:0 0 300px;min-width:260px;position:sticky;top:18px}
- .search{width:100%;font-family:var(--mono);font-size:13px;color:var(--txt);background:var(--ink2);
-   border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px;outline:none}
+ .searchrow{display:flex;gap:7px;align-items:center;margin-bottom:12px}
+ .search{flex:1;min-width:0;font-family:var(--mono);font-size:13px;color:var(--txt);background:var(--ink2);
+   border:1px solid var(--line);border-radius:10px;padding:10px 12px;outline:none}
  .search:focus{border-color:var(--accent)}
+ .calbtn{flex:0 0 auto;font-size:16px;line-height:1;cursor:pointer;background:var(--ink2);border:1px solid var(--line);
+   border-radius:10px;padding:8px 10px;transition:.15s}
+ .calbtn:hover{border-color:var(--accent);transform:translateY(-1px)}
+ .dp{flex:0 0 auto;width:38px;opacity:0;position:absolute;right:0;pointer-events:none;color-scheme:dark}
  .daylist{max-height:72vh;overflow:auto;padding-right:4px}
  .day{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:11px;
    padding:10px 12px;margin-bottom:9px;cursor:pointer;transition:.15s}
@@ -219,7 +225,11 @@ TEMPLATE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <div id="fresh" class="freshbar"></div>
 <div class="scancols">
  <div class="side">
-  <input id="q" class="search" placeholder="🔎 search date or text (e.g. 2026-06-19, KTOS, reserve)…" autocomplete="off">
+  <div class="searchrow">
+   <input id="q" class="search" placeholder="🔎 search date or text…" autocomplete="off">
+   <button id="cal" class="calbtn" title="Pick a date" aria-label="Pick a date">📅</button>
+   <input id="dp" type="date" class="dp" min="__OLDEST__" max="__NEWEST__" title="Jump to date">
+  </div>
   <div class="daylist" id="list"></div>
  </div>
  <div class="viewer card">
@@ -257,6 +267,14 @@ TEMPLATE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   const q=e.target.value.trim().toLowerCase();
   filt=q?DATA.filter(s=>s.search.includes(q)):DATA;
   if(filt.length&&!filt.includes(sel))show(filt[0]);else paint();
+ });
+ // calendar date-picker: click 📅 -> native calendar -> jump to that day's report (or nearest earlier)
+ const dp=document.getElementById("dp"), cal=document.getElementById("cal");
+ cal.addEventListener("click",()=>{ if(dp.showPicker){try{dp.showPicker();return}catch(e){}} dp.style.opacity=1;dp.style.pointerEvents="auto";dp.focus(); });
+ dp.addEventListener("change",()=>{ const v=dp.value; if(!v)return;
+  const hit=DATA.find(s=>s.date===v)||DATA.find(s=>s.date<=v)||DATA[DATA.length-1];
+  document.getElementById("q").value=""; filt=DATA; show(hit);
+  const el=document.querySelector(".day.sel"); if(el)el.scrollIntoView({block:"nearest"});
  });
  show(sel);
 </script>
