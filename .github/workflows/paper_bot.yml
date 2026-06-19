@@ -44,11 +44,35 @@ jobs:
           fi
           rm -rf _brain
 
+      - name: Crypto-bot heartbeat -> health.json
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d = {}
+          if Path("web/data.json").exists():
+              try: d = json.loads(Path("web/data.json").read_text(encoding="utf-8"))
+              except Exception: d = {}
+          p = Path("web/health.json"); h = {}
+          if p.exists():
+              try: h = json.loads(p.read_text(encoding="utf-8"))
+              except Exception: h = {}
+          h["crypto_bot"] = {
+              "updated": d.get("updated", "unknown"),
+              "regime": d.get("regime"),
+              "open_positions": len(d.get("positions", []) or []),
+              "total_trades": d.get("total_trades"),
+              "ok": bool(d.get("updated")),
+          }
+          p.write_text(json.dumps(h, indent=2), encoding="utf-8")
+          print("crypto heartbeat:", h["crypto_bot"])
+          PY
+
       - name: Persist state back to repo
         run: |
           git config user.name  "paper-bot"
           git config user.email "bot@users.noreply.github.com"
-          for f in live_bot/state_*.json live_bot/equity_*.csv live_bot/trades.csv live_bot/regime_log.csv web/data.json web/stocks.html web/scans.html; do
+          for f in live_bot/state_*.json live_bot/equity_*.csv live_bot/trades.csv live_bot/regime_log.csv web/data.json web/stocks.html web/scans.html web/health.json; do
             [ -f "$f" ] && git add -f "$f"
           done
           git commit -m "paper-bot run $(date -u +%FT%TZ)" || echo "no changes"

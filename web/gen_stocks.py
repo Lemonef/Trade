@@ -10,9 +10,13 @@ Prices via yfinance (accurate close, not the routine's intraday bad-ticks).
 Brain path resolution order: $SECOND_BRAIN env -> D:/second-brain -> ../second-brain -> ./second-brain
 (so it works locally AND in a CI job that clones the brain alongside this repo).
 """
-import json, os, re
+import json, os, re, datetime
 from pathlib import Path
 import yfinance as yf
+try:
+    import requests
+except ImportError:
+    requests = None
 
 
 def find_brain():
@@ -86,10 +90,36 @@ def _drop_glitches(out, jump=0.25):
     return keep
 
 
+def _stooq_hist(tkr, days=400):
+    """Fallback price source — stooq daily CSV. Works from GitHub Actions cloud IPs,
+    where Yahoo/yfinance is frequently rate-limited/blocked (the silent-freeze cause)."""
+    if requests is None:
+        return []
+    try:
+        url = f"https://stooq.com/q/d/l/?s={tkr.lower()}.us&i=d"
+        r = requests.get(url, timeout=20)
+        if r.status_code != 200 or "Date" not in r.text[:50]:
+            return []
+        out = []
+        for ln in r.text.strip().splitlines()[1:]:
+            p = ln.split(",")
+            if len(p) < 5:
+                continue
+            try:
+                fv = float(p[4])
+            except ValueError:
+                continue
+            if fv == fv and fv > 0:
+                out.append([p[0], round(fv, 2)])
+        return out[-days:]
+    except Exception:
+        return []
+
+
 def hist(tkr, days=400):
+    out = []
     try:
         h = yf.Ticker(tkr).history(period=f"{days}d")["Close"].dropna()   # drop NaN closes
-        out = []
         for i, v in h.items():
             try:
                 fv = float(v)
@@ -97,9 +127,26 @@ def hist(tkr, days=400):
                 continue
             if fv == fv and fv > 0:                                       # fv==fv filters NaN
                 out.append([str(i.date()), round(fv, 2)])
-        return _drop_glitches(out)                                        # strip lone bad-tick bars
     except Exception:
-        return []
+        out = []
+    if not out:                                                           # yfinance empty/blocked -> stooq
+        out = _stooq_hist(tkr, days)
+    return _drop_glitches(out)                                            # strip lone bad-tick bars
+
+
+def _write_health(component, info):
+    """Heartbeat: merge this component's status into web/health.json so there's ONE
+    machine-readable record of when each piece last successfully updated (stocks /
+    scans / crypto bot). A page can show it; you can eyeball it; CI can alert on it."""
+    p = Path("web/health.json")
+    h = {}
+    if p.exists():
+        try:
+            h = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            h = {}
+    h[component] = info
+    p.write_text(json.dumps(h, indent=2), encoding="utf-8")
 
 
 def main():
@@ -117,6 +164,8 @@ def main():
         pnl = round((ref - h["entry"]) / h["entry"] * 100, 1) if (h["entry"] and ref is not None) else 0.0
         out.append({**h, "current": cur, "pnl": pnl, "series": series})
     DATA = json.dumps(out)
+    build_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    asof = max((o["series"][-1][0] for o in out if o["series"]), default="no-data")
 
     html = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -135,6 +184,10 @@ def main():
  .kpi .v{font-family:var(--mono);font-size:19px;font-weight:700;margin-top:3px}
  canvas{width:100%;height:340px;background:var(--ink2);border:1px solid var(--line);border-radius:10px;margin-top:6px}
  .pos{color:var(--up)} .neg{color:var(--dn)}
+ .freshbar{font-family:var(--mono);font-size:12.5px;font-weight:600;border-radius:10px;padding:9px 14px;margin:0 0 18px;border:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+ .freshbar.ok{background:rgba(39,211,138,.08);border-color:rgba(39,211,138,.35);color:var(--up)}
+ .freshbar.stale{background:rgba(255,90,106,.12);border-color:var(--dn);color:var(--dn)}
+ .freshbar .sub{color:var(--mut);font-weight:500}
  .tag{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:6px;background:rgba(39,211,138,.13);color:var(--up);border:1px solid rgba(39,211,138,.3)}
  .tag.closed{background:rgba(183,156,255,.13);color:var(--accent2);border-color:rgba(183,156,255,.3)}
  @media(max-width:560px){.main{min-width:0} .kpis{grid-template-columns:repeat(2,1fr)}}
@@ -145,6 +198,7 @@ def main():
 <p class="lede">Live paper track of the spike-hunter framework, built straight from the brain ledger (<code>paper-trades.md</code>) — never stale. Real price history (yfinance close), entry markers, unrealized P&amp;L.</p>
 <div id="nav"></div>
 <script src="./nav.js"></script>
+<div id="fresh" class="freshbar"></div>
 <div class="cols">
  <div class="list" id="list"></div>
  <div class="main"><div class="card">
@@ -163,7 +217,16 @@ def main():
 <footer>Built from the brain ledger · prices via yfinance · paper only · not financial advice · Lemonef/Trade</footer>
 </div>
 <script>
- const DATA=__DATA__; let sel=DATA[0];
+ const DATA=__DATA__, ASOF="__ASOF__", BUILT="__BUILT__"; let sel=DATA[0];
+ (function(){const fb=document.getElementById("fresh");if(!fb)return;
+  const d=new Date(ASOF+"T00:00:00Z"),now=new Date();
+  const days=isNaN(d)?999:Math.floor((now-d)/864e5);
+  // weekend-aware: market data 1-3 days old over a weekend/holiday is normal; >3 calendar days = stale
+  const stale=days>3;
+  fb.className="freshbar "+(stale?"stale":"ok");
+  fb.innerHTML=(stale?"⚠️ STALE — prices "+days+" days old":"✓ Fresh — prices as of "+ASOF)+
+    ' <span class="sub">· data as-of '+ASOF+' · page built '+BUILT+(stale?' · the auto-rebuild likely failed, prices below are NOT current — do not trade off them':'')+'</span>';
+ })();
  const f=(v,s="")=>{const c=v>0?"pos":(v<0?"neg":"");return `<span class="${c}">${v}${s}</span>`};
  function draw(h){
   document.getElementById("nm").textContent=h.ticker+" — "+h.name;
@@ -209,8 +272,13 @@ def main():
 </script>
 <script type="module" src="./anim.js"></script>
 </body></html>"""
-    Path("web/stocks.html").write_text(html.replace("__DATA__", DATA), encoding="utf-8")
-    print(f"wrote web/stocks.html ({len(out)} positions: {', '.join(p['ticker'] for p in out)})")
+    page = html.replace("__DATA__", DATA).replace("__ASOF__", asof).replace("__BUILT__", build_utc)
+    Path("web/stocks.html").write_text(page, encoding="utf-8")
+    _write_health("stocks", {"built_utc": build_utc, "data_asof": asof,
+                             "n_positions": len(out),
+                             "tickers": [p["ticker"] for p in out],
+                             "ok": asof != "no-data"})
+    print(f"wrote web/stocks.html ({len(out)} positions: {', '.join(p['ticker'] for p in out)}; data as-of {asof})")
 
 
 if __name__ == "__main__":

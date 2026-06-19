@@ -10,7 +10,7 @@ paper-bot CI rebuilds it every cycle (never stale).
 
 Brain path resolution: $SECOND_BRAIN env -> D:/second-brain -> ../second-brain -> ./second-brain
 """
-import json, os, re, html as _html
+import json, os, re, datetime, html as _html
 from pathlib import Path
 
 try:
@@ -120,6 +120,19 @@ def title_of(text, fallback):
     return fallback
 
 
+def _write_health(component, info):
+    """Merge this component's status into web/health.json (shared heartbeat)."""
+    p = Path("web/health.json")
+    h = {}
+    if p.exists():
+        try:
+            h = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            h = {}
+    h[component] = info
+    p.write_text(json.dumps(h, indent=2), encoding="utf-8")
+
+
 def main():
     brain = find_brain()
     if not brain:
@@ -143,10 +156,15 @@ def main():
     # newest first; if same date, Daily before Weekly/etc.
     scans.sort(key=lambda s: (s["date"], s["kind"] != "Daily"), reverse=True)
     DATA = json.dumps(scans, ensure_ascii=False)
+    build_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    newest = scans[0]["date"] if scans else "no-data"
 
-    page = TEMPLATE.replace("__DATA__", DATA).replace("__COUNT__", str(len(scans)))
+    page = (TEMPLATE.replace("__DATA__", DATA).replace("__COUNT__", str(len(scans)))
+                    .replace("__NEWEST__", newest).replace("__BUILT__", build_utc))
     Path("web/scans.html").write_text(page, encoding="utf-8")
-    print(f"wrote web/scans.html ({len(scans)} reports: {', '.join(s['date']+'/'+s['kind'] for s in scans[:6])}{' …' if len(scans)>6 else ''})")
+    _write_health("scans", {"built_utc": build_utc, "newest_report": newest, "n_reports": len(scans),
+                            "ok": bool(scans)})
+    print(f"wrote web/scans.html ({len(scans)} reports; newest {newest})")
 
 
 TEMPLATE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -186,6 +204,10 @@ TEMPLATE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
  .scan-body code{font-size:12px}
  .scan-body hr{border:none;border-top:1px solid var(--line);margin:20px 0}
  .empty{color:var(--dim);font-family:var(--mono);font-size:13px;padding:30px 0}
+ .freshbar{font-family:var(--mono);font-size:12.5px;font-weight:600;border-radius:10px;padding:9px 14px;margin:0 0 18px;border:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+ .freshbar.ok{background:rgba(39,211,138,.08);border-color:rgba(39,211,138,.35);color:var(--up)}
+ .freshbar.stale{background:rgba(255,90,106,.12);border-color:var(--dn);color:var(--dn)}
+ .freshbar .sub{color:var(--mut);font-weight:500}
  @media(max-width:680px){.scancols{flex-direction:column}.side{position:static;flex-basis:auto;width:100%}.daylist{max-height:none}}
 </style></head><body>
 <div class="wrap">
@@ -194,6 +216,7 @@ TEMPLATE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <p class="lede">Every daily spike-hunter report, straight from the brain ledger — <b>__COUNT__</b> on file. Search any day, pick a date, read the full report (market state · positions · watchlist · proposed adds · alerts). Not financial advice.</p>
 <div id="nav"></div>
 <script src="./nav.js"></script>
+<div id="fresh" class="freshbar"></div>
 <div class="scancols">
  <div class="side">
   <input id="q" class="search" placeholder="🔎 search date or text (e.g. 2026-06-19, KTOS, reserve)…" autocomplete="off">
@@ -207,7 +230,15 @@ TEMPLATE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <footer>Built from the brain ledger (research/scans) · paper only · not financial advice · Lemonef/Trade</footer>
 </div>
 <script>
- const DATA=__DATA__; let sel=DATA[0]||null, filt=DATA;
+ const DATA=__DATA__, NEWEST="__NEWEST__", BUILT="__BUILT__"; let sel=DATA[0]||null, filt=DATA;
+ (function(){const fb=document.getElementById("fresh");if(!fb)return;
+  const d=new Date(NEWEST+"T00:00:00Z"),now=new Date();
+  const days=isNaN(d)?999:Math.floor((now-d)/864e5);
+  const stale=days>3;   // a daily report should never be >3 days old
+  fb.className="freshbar "+(stale?"stale":"ok");
+  fb.innerHTML=(stale?"⚠️ STALE — newest report "+days+" days old (the daily routine may have stopped)":"✓ Fresh — newest report "+NEWEST)+
+    ' <span class="sub">· newest '+NEWEST+' · page built '+BUILT+'</span>';
+ })();
  function show(s){sel=s;
   document.getElementById("vk").textContent=s?s.kind:"";
   document.getElementById("vk").className="kind "+(s?s.kcls:"");
