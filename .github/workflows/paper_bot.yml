@@ -39,7 +39,7 @@ jobs:
           # IMPORTANT: actions/checkout injects an Authorization header for THIS repo (Trade) into
           # global git config. Cloning SecondBrain with it sends the wrong credential -> GitHub 403s
           # a public repo instead of falling back to anonymous. Clear it for this clone (the silent-freeze bug).
-          if git -c http.https://github.com/.extraheader= clone --depth 1 "$URL" _brain; then
+          if GIT_TERMINAL_PROMPT=0 git -c http.https://github.com/.extraheader= clone --depth 1 "$URL" _brain 2>&1; then
             SECOND_BRAIN=_brain python web/gen_stocks.py || echo "stocks gen failed"
             SECOND_BRAIN=_brain python web/gen_scans.py  || echo "scans gen failed"
           else
