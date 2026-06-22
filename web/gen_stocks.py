@@ -220,12 +220,13 @@ def main():
  const DATA=__DATA__, ASOF="__ASOF__", BUILT="__BUILT__"; let sel=DATA[0];
  (function(){const fb=document.getElementById("fresh");if(!fb)return;
   const d=new Date(ASOF+"T00:00:00Z"),now=new Date();
-  const days=isNaN(d)?999:Math.floor((now-d)/864e5);
-  // weekend-aware: market data 1-3 days old over a weekend/holiday is normal; >3 calendar days = stale
-  const stale=days>3;
+  // TRADING-day aware: weekends + holidays produce NO new closes, so count WEEKDAYS elapsed, not calendar
+  // days (Thu close -> Mon after a Fri holiday = 4 cal days but 0-1 trading days = NOT stale, the 06-22 bug).
+  let wd=0; if(!isNaN(d)){let t=new Date(d);t.setUTCDate(t.getUTCDate()+1);while(t<now){const g=t.getUTCDay();if(g!==0&&g!==6)wd++;t.setUTCDate(t.getUTCDate()+1);}}
+  const stale=wd>2;   // >2 trading days with no new close = genuinely stale (tolerates a single holiday)
   fb.className="freshbar "+(stale?"stale":"ok");
-  fb.innerHTML=(stale?"⚠️ STALE — prices "+days+" days old":"✓ Fresh — prices as of "+ASOF)+
-    ' <span class="sub">· data as-of '+ASOF+' · page built '+BUILT+(stale?' · the auto-rebuild likely failed, prices below are NOT current — do not trade off them':'')+'</span>';
+  fb.innerHTML=(stale?"⚠️ STALE — no new close in "+wd+" trading days":"✓ Fresh — last close "+ASOF)+
+    ' <span class="sub">· data as-of '+ASOF+' · page built '+BUILT+(stale?' · auto-rebuild may have failed — prices below are NOT current, do not trade off them':'')+'</span>';
  })();
  const f=(v,s="")=>{const c=v>0?"pos":(v<0?"neg":"");return `<span class="${c}">${v}${s}</span>`};
  function draw(h){
