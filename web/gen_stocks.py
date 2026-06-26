@@ -58,18 +58,45 @@ def parse_positions(brain):
             entry = first_price(cells[2])
             if entry is None:
                 continue
+            sc = cells[9]
+            head = sc[:45].upper()                          # detect CLOSED on the LEADING status, not "open-market" later in the cell
+            closed = ("CLOSED" in head) or ("SOLD" in head)
+            exit_px = None
+            if closed:
+                m = re.search(r"@\s*~?\$?\s*([0-9]+(?:\.[0-9]+)?)", sc)   # "SOLD ... @ ~$8.91"
+                if m:
+                    exit_px = float(m.group(1))
+            sm = re.search(r"([0-9][0-9,]*)\s*฿", cells[2])              # deployed size (baht) from the entry cell
+            size_baht = int(sm.group(1).replace(",", "")) if sm else None
             rows.append(dict(
                 ticker=re.sub(r"[^A-Z]", "", tk.upper())[:6],
                 name=tk,
                 entry_date=cells[1][:10],
                 entry=entry,
                 flavor=cells[3][:60],
-                status="OPEN" if "OPEN" in cells[9].upper() else cells[9][:18],
-                target=None, stop=None, exit=None, exit_date=None,
+                closed=closed,
+                status="EXITED" if closed else "OPEN",
+                exit=exit_px, exit_date=None,
+                size_baht=size_baht,
                 book=section,
                 note=re.sub(r"\s+", " ", cells[4])[:240],
             ))
     return rows
+
+
+def parse_capital(brain):
+    """Pull the money headline from paper-trades.md RUNNING TOTAL (sleeve / dry / realized, in ฿)."""
+    text = (brain / "memory" / "paper-trades.md").read_text(encoding="utf-8")
+    def baht(pat):
+        m = re.search(pat, text)
+        if not m:
+            return None
+        return int(m.group(1).replace(",", "").replace("−", "-").replace("−", "-"))
+    return {
+        "sleeve":   baht(r"[Ss]leeve value[^0-9~]*~?\s*([0-9,]+)\s*฿"),
+        "dry":      baht(r"[Dd]ry powder[^0-9~]*~?\s*([0-9,]+)\s*฿"),
+        "realized": baht(r"[Rr]ealized P&L[^0-9\-−]*([\-−]?[0-9,]+)\s*฿"),
+    }
 
 
 def _drop_glitches(out, jump=0.25):
@@ -160,10 +187,19 @@ def main():
         cur = series[-1][1] if series else h["entry"]                     # no valid prices → fall back to entry (never NaN)
         if cur is None or cur != cur:                                     # cur!=cur catches NaN
             cur = h["entry"]
-        ref = h["exit"] if h["exit"] else cur
+        ref = h["exit"] if h["exit"] else cur                            # closed → realized vs exit; open → unrealized vs current
         pnl = round((ref - h["entry"]) / h["entry"] * 100, 1) if (h["entry"] and ref is not None) else 0.0
         out.append({**h, "current": cur, "pnl": pnl, "series": series})
+    # open positions first, then exited; within each newest entry first
+    out.sort(key=lambda o: (o["closed"], o["entry_date"]), reverse=False)
     DATA = json.dumps(out)
+    cap = parse_capital(brain)
+    cap["n_open"]   = sum(1 for o in out if not o["closed"])
+    cap["n_closed"] = sum(1 for o in out if o["closed"])
+    cap["holding"]  = round(sum((o["size_baht"] or 0) * (1 + o["pnl"]/100) for o in out if not o["closed"]))
+    cap["deployed"] = sum((o["size_baht"] or 0) for o in out if not o["closed"])
+    cap["unreal"]   = round(sum((o["size_baht"] or 0) * (o["pnl"]/100) for o in out if not o["closed"]))
+    CAP = json.dumps(cap)
     build_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     asof = max((o["series"][-1][0] for o in out if o["series"]), default="no-data")
 
@@ -178,7 +214,15 @@ def main():
  .item:hover{border-color:var(--line2);transform:translateY(-1px)} .item.sel{border-color:var(--up)}
  .item .t{font-family:var(--mono);font-weight:700;font-size:14px} .item .p{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:2px}
  .main{flex:1;min-width:460px}
- .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
+ .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px}
+ .summary{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:0 0 16px}
+ .scard{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:11px;padding:11px 13px}
+ .scard .k{font-family:var(--mono);color:var(--mut);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase}
+ .scard .v{font-family:var(--mono);font-size:17px;font-weight:700;margin-top:3px}
+ .postabs{display:flex;gap:7px;margin:0 0 12px}
+ .ptab{font-family:var(--mono);font-size:12.5px;background:var(--ink2);border:1px solid var(--line);color:var(--mut);padding:7px 14px;border-radius:9px;cursor:pointer;transition:.15s}
+ .ptab:hover{color:var(--txt);border-color:var(--line2)} .ptab.active{background:linear-gradient(180deg,#1b2942,#16223a);color:#fff;border-color:var(--accent)}
+ @media(max-width:560px){.summary{grid-template-columns:repeat(2,1fr)}}
  .kpi{background:var(--ink2);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
  .kpi .k{font-family:var(--mono);color:var(--mut);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
  .kpi .v{font-family:var(--mono);font-size:19px;font-weight:700;margin-top:3px}
@@ -199,14 +243,17 @@ def main():
 <div id="nav"></div>
 <script src="./nav.js"></script>
 <div id="fresh" class="freshbar"></div>
+<div id="summary" class="summary"></div>
+<div id="postabs" class="postabs"></div>
 <div class="cols">
  <div class="list" id="list"></div>
  <div class="main"><div class="card">
   <h2 id="nm" style="margin:0 0 4px">—</h2><div class="note" id="note" style="margin-bottom:14px"></div>
   <div class="kpis">
    <div class="kpi"><div class="k">Entry</div><div class="v" id="ke">—</div></div>
-   <div class="kpi"><div class="k">Current</div><div class="v" id="kc">—</div></div>
-   <div class="kpi"><div class="k">P&amp;L</div><div class="v" id="kp">—</div></div>
+   <div class="kpi"><div class="k">Size</div><div class="v" id="kz">—</div></div>
+   <div class="kpi"><div class="k" id="kcl">Current</div><div class="v" id="kc">—</div></div>
+   <div class="kpi"><div class="k" id="kpl">P&amp;L</div><div class="v" id="kp">—</div></div>
    <div class="kpi"><div class="k">Status</div><div class="v" id="ks">—</div></div>
    <div class="kpi"><div class="k">Flavor</div><div class="v" id="kf" style="font-size:12px">—</div></div>
   </div>
@@ -217,7 +264,17 @@ def main():
 <footer>Built from the brain ledger · prices via yfinance · paper only · not financial advice · Lemonef/Trade</footer>
 </div>
 <script>
- const DATA=__DATA__, ASOF="__ASOF__", BUILT="__BUILT__"; let sel=DATA[0];
+ const DATA=__DATA__, CAP=__CAP__, ASOF="__ASOF__", BUILT="__BUILT__";
+ let posTab="current";
+ let sel=DATA.find(o=>!o.closed)||DATA[0];
+ const B=v=>(v==null?"—":(v<0?"-":"")+"฿"+Math.abs(v).toLocaleString());
+ (function(){const s=document.getElementById("summary");if(!s||!CAP)return;
+  const cells=[["Sleeve",B(CAP.sleeve)],["Holding (open)",B(CAP.holding)],["Cash / dry",B(CAP.dry)],
+    ["Unrealized",`<span class="${(CAP.unreal||0)>=0?'pos':'neg'}">${B(CAP.unreal)}</span>`],
+    ["Realized",`<span class="${(CAP.realized||0)>=0?'pos':'neg'}">${B(CAP.realized)}</span>`],
+    ["Open / Exited",`${CAP.n_open} / ${CAP.n_closed}`]];
+  s.innerHTML=cells.map(([k,v])=>`<div class="scard"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+ })();
  (function(){const fb=document.getElementById("fresh");if(!fb)return;
   const d=new Date(ASOF+"T00:00:00Z"),now=new Date();
   // TRADING-day aware: weekends + holidays produce NO new closes, so count WEEKDAYS elapsed, not calendar
@@ -233,9 +290,12 @@ def main():
   document.getElementById("nm").textContent=h.ticker+" — "+h.name;
   document.getElementById("note").textContent=h.note;
   document.getElementById("ke").textContent="$"+h.entry;
-  document.getElementById("kc").textContent="$"+h.current;
+  document.getElementById("kz").textContent=h.size_baht?("฿"+h.size_baht.toLocaleString()):"—";
+  document.getElementById("kcl").textContent=h.closed?"Exit":"Current";
+  document.getElementById("kc").textContent="$"+(h.closed?(h.exit!=null?h.exit:h.current):h.current);
+  document.getElementById("kpl").textContent=h.closed?"Realized P&L":"P&L";
   document.getElementById("kp").innerHTML=f(h.pnl,"%");
-  document.getElementById("ks").innerHTML='<span class="tag '+(h.status=="OPEN"?'':'closed')+'">'+h.status+'</span>';
+  document.getElementById("ks").innerHTML='<span class="tag '+(h.closed?'closed':'')+'">'+h.status+'</span>';
   document.getElementById("kf").textContent=h.flavor;
   const cv=document.getElementById("cv"),x=cv.getContext("2d"),P=52;
   // HiDPI: scale backing store by devicePixelRatio so text/lines render SHARP (was blurry — canvas upscaled by the browser)
@@ -261,19 +321,30 @@ def main():
   let ei=s.findIndex(p=>p[0]>=h.entry_date); if(ei<0)ei=n-1;
   x.fillStyle="#e8a14b";x.beginPath();x.arc(X(ei),Y(h.entry),6,0,7);x.fill();
   const tb=document.querySelector("#log tbody");
-  let rows=`<tr><td class="mono">${h.entry_date}</td><td class="mono">BUY</td><td class="mono">$${h.entry}</td><td>${h.flavor}</td></tr>`;
-  rows+=`<tr><td class="mono">${s[n-1][0]}</td><td class="mono">mark (now)</td><td class="mono">$${h.current}</td><td>${f(h.pnl,"% unrealized — not sold")}</td></tr>`;
+  let rows=`<tr><td class="mono">${h.entry_date}</td><td class="mono">BUY</td><td class="mono">$${h.entry}</td><td>${h.size_baht?'฿'+h.size_baht.toLocaleString()+' · ':''}${h.flavor}</td></tr>`;
+  if(h.closed) rows+=`<tr><td class="mono">${s[n-1][0]}</td><td class="mono">SELL</td><td class="mono">$${h.exit!=null?h.exit:h.current}</td><td>${f(h.pnl,"% realized — position closed")}</td></tr>`;
+  else rows+=`<tr><td class="mono">${s[n-1][0]}</td><td class="mono">mark (now)</td><td class="mono">$${h.current}</td><td>${f(h.pnl,"% unrealized — not sold")}</td></tr>`;
   tb.innerHTML=rows;
  }
- function list(){const L=document.getElementById("list");L.innerHTML="";
-  DATA.forEach(h=>{const d=document.createElement("div");d.className="item"+(sel===h?" sel":"");
-   d.innerHTML=`<div class="t">${h.ticker} ${h.pnl>=0?'<span class="pos">+'+h.pnl+'%</span>':'<span class="neg">'+h.pnl+'%</span>'}</div><div class="p">${h.name.replace(/\|/g,' ').slice(0,38)} · ${h.status} · ${h.book}</div>`;
-   d.onclick=()=>{sel=h;list();draw(h)};L.appendChild(d);});}
- list();draw(sel);
+ function tabs(){const t=document.getElementById("postabs");
+  const nO=DATA.filter(o=>!o.closed).length,nC=DATA.filter(o=>o.closed).length;
+  t.innerHTML=[["current","Current · "+nO],["exited","Exited · "+nC]].map(([k,l])=>
+    `<button class="ptab${posTab===k?' active':''}" data-k="${k}">${l}</button>`).join("");
+  t.querySelectorAll(".ptab").forEach(b=>b.onclick=()=>{posTab=b.dataset.k;
+    const fr=DATA.filter(o=>posTab==="exited"?o.closed:!o.closed); if(fr.length)sel=fr[0]; render();});
+ }
+ function list(){const L=document.getElementById("list");
+  const rows=DATA.filter(o=>posTab==="exited"?o.closed:!o.closed);
+  L.innerHTML = rows.length ? "" : '<div class="note" style="padding:10px 4px">No '+posTab+' positions.</div>';
+  rows.forEach(h=>{const d=document.createElement("div");d.className="item"+(sel===h?" sel":"");
+   d.innerHTML=`<div class="t">${h.ticker} ${h.pnl>=0?'<span class="pos">+'+h.pnl+'%</span>':'<span class="neg">'+h.pnl+'%</span>'}</div><div class="p">${h.name.replace(/\|/g,' ').slice(0,30)} · ${h.status} · ${h.book}</div>`;
+   d.onclick=()=>{sel=h;render()};L.appendChild(d);});}
+ function render(){tabs();list();if(sel)draw(sel);}
+ render();
 </script>
 <script type="module" src="./anim.js"></script>
 </body></html>"""
-    page = html.replace("__DATA__", DATA).replace("__ASOF__", asof).replace("__BUILT__", build_utc)
+    page = html.replace("__DATA__", DATA).replace("__CAP__", CAP).replace("__ASOF__", asof).replace("__BUILT__", build_utc)
     Path("web/stocks.html").write_text(page, encoding="utf-8")
     _write_health("stocks", {"built_utc": build_utc, "data_asof": asof,
                              "n_positions": len(out),
