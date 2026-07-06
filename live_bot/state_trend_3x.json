@@ -9,7 +9,7 @@
       "held": 0,
       "size": 0.0,
       "trough": 62436.59,
-      "bars": 6
+      "bars": 7
     },
     "ETHUSDT": {
       "cash": 500.0,
@@ -37,8 +37,8 @@
       "peak": 593.1,
       "held": 0,
       "size": 0.0,
-      "trough": 576.19,
-      "bars": 2
+      "trough": 576.1,
+      "bars": 3
     },
     "XRPUSDT": {
       "cash": 500.0,
@@ -57,8 +57,8 @@
       "peak": 0.2,
       "held": 0,
       "size": 0.0,
-      "trough": 0.1851,
-      "bars": 6
+      "trough": 0.1816,
+      "bars": 7
     },
     "AVAXUSDT": {
       "cash": 500.0,
@@ -187,6 +187,6 @@
       "size": 0.0
     }
   },
-  "last_run": "2026-07-06T04:22:53.591204+00:00",
-  "equity": 9973.41
+  "last_run": "2026-07-06T12:12:19.621802+00:00",
+  "equity": 9918.08
 }
