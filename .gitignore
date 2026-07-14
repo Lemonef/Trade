@@ -5,6 +5,7 @@ graphify-out/.graphify_*
 backtest/data/
 __pycache__/
 *.pyc
+.venv/
 
 # live bot runtime state/logs (code is tracked, runtime data is not)
 live_bot/state*.json
