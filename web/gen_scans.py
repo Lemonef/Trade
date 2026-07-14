@@ -237,7 +237,7 @@ TEMPLATE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   <div class="scan-body" id="body"></div>
  </div>
 </div>
-<footer>Built from the brain ledger (research/scans) · paper only · not financial advice · Lemonef/Trade</footer>
+<footer>Built from the brain ledger (research/scans) · paper only · not financial advice · Lemonef/Quant</footer>
 </div>
 <script>
  const DATA=__DATA__, NEWEST="__NEWEST__", BUILT="__BUILT__"; let sel=DATA[0]||null, filt=DATA;

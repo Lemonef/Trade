@@ -240,7 +240,7 @@ HTML = r"""<!doctype html>
    Bear-short sleeve · Donchian ensemble SSRN (OOS 0.73&lt;0.86) · AdaptiveTrend arXiv 2.41 (shorts+survivorship) · vol-targeting (double-counts) · funding market-timing (fade thesis false) · on-chain/liquidation (decayed) · XS-mom/lowvol/short-reversal (neg OOS) · RTN-Core rotational (0.53, killed) · HFT lead-lag AVAX +1523% (dies on fees) · halving/Q4 seasonality (small caveated tilt only). <b class="amber" style="color:var(--amber)">Frontier exhausted — gains now come from construction + execution, not new signals.</b>
  </div>
 
- <footer>Full/Recent = curve-derived (in-sample). OOS = real walk-forward (trustworthy). Backtests, not live · gross of funding · plan real DD ≈ 2× · not financial advice · Lemonef/Trade</footer>
+ <footer>Full/Recent = curve-derived (in-sample). OOS = real walk-forward (trustworthy). Backtests, not live · gross of funding · plan real DD ≈ 2× · not financial advice · Lemonef/Quant</footer>
 </div>
 <script>
  const DATA=__DATA__; let L="1x", P="recent", key="cagr", dir=-1, sel=DATA[0], selLev="1x";

@@ -27,8 +27,8 @@ Why Oracle: its free tier is **permanent** (not a 12-month trial) and lets you p
 ## 2. Deploy the bot on the VM
 ```bash
 sudo apt update && sudo apt install -y python3-pip git
-git clone https://github.com/Lemonef/Trade.git
-cd Trade && pip3 install requests pandas numpy markdown
+git clone https://github.com/Lemonef/Quant.git
+cd Quant && pip3 install requests pandas numpy markdown
 python3 live_bot/paper_bot.py        # smoke test — should write web/data.json, no errors
 ```
 (From Singapore, `api.binance.com` works — no 451. The vision fallback still covers you.)

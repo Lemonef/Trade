@@ -261,7 +261,7 @@ def main():
   <table id="log" style="margin-top:14px"><thead><tr><th>Date</th><th>Action</th><th>Price</th><th>Note</th></tr></thead><tbody></tbody></table>
  </div></div>
 </div>
-<footer>Built from the brain ledger · prices via yfinance · paper only · not financial advice · Lemonef/Trade</footer>
+<footer>Built from the brain ledger · prices via yfinance · paper only · not financial advice · Lemonef/Quant</footer>
 </div>
 <script>
  const DATA=__DATA__, CAP=__CAP__, ASOF="__ASOF__", BUILT="__BUILT__";
