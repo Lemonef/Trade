@@ -26,6 +26,11 @@ scoreboard, GBM synthetic-data harness tests, universe expansion.
 - Macro overlay factors from FRED (DXY, rates, credit spreads) as regime features
   for the crypto book. Free data. _Provenance: "Bridgewater macro" prompt
   (second-pass salvage of its inputs, not its LLM-dashboard form)._
+- Rebalancing-premium sleeve ("volatility harvesting" / Shannon's demon): fixed-weight
+  basket, mechanical rebalance sells high / buys low — the spot-only analog of gamma
+  scalping's realized-vol capture. Evaluate under factory rules incl. fee/turnover
+  reality (rebalance frequency is the cost knob). _Provenance: gamma-scalping ask,
+  strip-mined (2026-07-14)._
 
 ## Phase 3 — stock side (spike-hunter)
 - Stock daily-OHLCV panel through the same factory harness → systematic pre-screen
@@ -93,7 +98,11 @@ scoreboard, GBM synthetic-data harness tests, universe expansion.
 - Chart-pattern technical analysis packs: repo history shows TA variants lose OOS
   (`backtest_results/IMPROVEMENTS_TRIED.md`).
 - Options/derivatives strategy material (GS-Quant, pricing-course repos, D.E. Shaw
-  prompt): no options traded. Revisit only if an options leg is ever added.
+  prompt, gamma scalping, delta hedging in their true options form): no options
+  traded. Revisit only if an options leg is ever added (crypto options = Deribit;
+  free public API incl. implied-vol data). Salvage already extracted: the carry
+  sleeve is a live delta-neutral (hedged) structure; gamma scalping's spot-only
+  cousin is below.
 - Bloomberg terminal data: requires a paid terminal login; university lab access is
   the realistic route. Free sources cover current needs.
 - Server-side web patterns (Redis, bloom filters, cache-null TTL, TanStack Query):
