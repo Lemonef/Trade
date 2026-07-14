@@ -96,7 +96,8 @@ For each factor, on the daily panel:
 2. **Quantile long-short portfolio**: rank coins by factor daily, long top-K / short
    bottom-K (K derived from universe size), dollar-neutral, next-day execution
    (`shift(1)` — no same-bar fills), with the repo's existing cost assumptions (taker
-   fee, short borrow) and turnover accounting.
+   fee, short borrow), a configurable per-trade slippage haircut (real fills are worse
+   than quotes; one config constant), and turnover accounting.
 3. **Purged walk-forward**: contiguous folds over the full history with an embargo gap
    between train/eval boundaries so no leakage crosses folds; per-fold OOS metrics
    reported separately (never blended into one flattering number).

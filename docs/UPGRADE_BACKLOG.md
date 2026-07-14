@@ -53,9 +53,16 @@ scoreboard, GBM synthetic-data harness tests, universe expansion.
   peers row; margin-risk taxonomy (cost-push/demand-pull, cost overrun, realized-
   price-below-forecast); BOI tax check for Thai names. _Provenance: family investor
   lesson, 2026-07-14._
-- Factory zoo candidate from the same lessons: "open ≈ close → don't buy" (doji/
-  indecision) — testable within the existing candle-shape family, adopted only if it
-  survives. _Provenance: family investor lesson._
+- Factory zoo candidates from the same lessons: "open ≈ close → don't buy" (doji/
+  indecision, candle-shape family) and Darvas-box variants (box breakout + trail
+  under box lows — same family as the live Donchian core, so mostly a parameterization
+  test). Adopted only if they survive. _Provenance: family investor lesson._
+- Additional deep-dive reads from Zen's clarifications: margin-of-safety framing in
+  verdicts (state intrinsic-value estimate + discount paid); quarter-decomposition
+  read (hidden strength AND weakness, e.g. flat annual profit despite a disclosed
+  −50% final quarter = three strong quarters hiding); company capex-timeline read
+  (weak quarter may be money-not-deployed-yet); capital-allocation structure read.
+  _Provenance: family investor lesson (clarified 2026-07-14)._
 
 ## Go-live gate (before real money, any asset class)
 - Execution-quality checklist: spreads, slippage, order types, fee totals, fill-price
