@@ -26,6 +26,12 @@ scoreboard, GBM synthetic-data harness tests, universe expansion.
   pass every gate at its chosen speed.
 - pandas `pct_change` FutureWarning cleanup (`fill_method=None` where series are
   contiguous) — cosmetic, verify results unchanged before/after.
+- Factory v2 statistics (queued 2026-07-15, from the techniques survey; build in this
+  order): block-bootstrap CIs on fold Sharpes (cheapest, already a June TO-REVISIT) →
+  lag/noise perturbation gates → parameter-plateau check for survivor configs →
+  CPCV + PBO (distributional OOS + overfit probability) → Hansen SPA on the top
+  survivor before any promotion. Reference: brain `skills/backtest-validation-SKILL.md`
+  § QUEUED TECHNIQUES.
 
 ## Phase 2 — ML ranker (queued behind Alpha Factory)
 - Cross-sectional ML ranker (LightGBM-style, scikit-learn) trained on the factory's
