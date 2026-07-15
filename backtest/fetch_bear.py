@@ -4,7 +4,10 @@ from pathlib import Path
 import requests
 
 OUT = Path(__file__).parent / "data"; OUT.mkdir(exist_ok=True)
-SYMBOLS = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","LINKUSDT","LTCUSDT","DOGEUSDT"]
+# 20 pairs, all Binance-listed before 2023-01-01 (survivorship rule: see alpha_factory/config.py)
+SYMBOLS = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","DOGEUSDT",
+           "LINKUSDT","LTCUSDT","DOTUSDT","ATOMUSDT","UNIUSDT","ETCUSDT","XLMUSDT","FILUSDT",
+           "NEARUSDT","SANDUSDT","TRXUSDT","EOSUSDT"]
 IV = "4h"
 START_MS = 1609459200000   # 2021-01-01
 END_MS   = 1672531200000   # 2023-01-01
