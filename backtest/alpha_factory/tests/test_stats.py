@@ -10,6 +10,9 @@ def test_bh_fdr_known_case():
     # and a case where a later rank rescues earlier ones (step-up property)
     pv2 = [0.010, 0.012, 0.014, 0.9]
     assert bh_fdr(pv2, 0.05) == [True, True, True, False]  # k=3: 0.014 <= 0.0375
+    # regression: an exact p=0.0 (t-stat underflow) must SURVIVE, not nuke the batch
+    assert bh_fdr([0.0, 0.5, 0.9], 0.10) == [True, False, False]
+    assert bh_fdr([0.9, 0.8, 0.7], 0.10) == [False, False, False]  # nothing passes
 
 
 def test_ic_pvalue_scales():

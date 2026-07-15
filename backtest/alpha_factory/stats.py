@@ -16,14 +16,19 @@ def ic_pvalue(ic_mean, ic_std_daily, n_days):
 
 
 def bh_fdr(pvals, q):
-    """Benjamini-Hochberg: True where the hypothesis survives at FDR q."""
+    """Benjamini-Hochberg: True where the hypothesis survives at FDR q.
+    Tracks the passing RANK (not the threshold value) so a p-value of exactly 0.0
+    still passes — 'threshold is 0.0' must not read as 'nothing passed'."""
     m = len(pvals)
     order = sorted(range(m), key=lambda i: pvals[i])
-    thresh = 0.0
+    k_star = 0
     for rank, i in enumerate(order, 1):
         if pvals[i] <= q * rank / m:
-            thresh = pvals[i]
-    return [p <= thresh and thresh > 0 for p in pvals]
+            k_star = rank
+    if k_star == 0:
+        return [False] * m
+    thresh = pvals[order[k_star - 1]]
+    return [p <= thresh for p in pvals]
 
 
 def deflated_sharpe_prob(sr_annual, n_days, dpy, skew, kurt_excess, n_trials):
