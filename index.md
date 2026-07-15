@@ -12,6 +12,7 @@ Fully automated. See [[CLAUDE]] for full project spec + backtest workflow.
 ## Results
 - [[SWEEP_2023_4H]] — full 5-strategy × 4-market sweep (4H, 2023→2026) **← main table**
 - [[DONCHIAN_V1_SOL4H_2023]] — first Donchian deep-dive report
+- [[ALPHA_FACTORY_2026-07-15]] — factor-zoo scoreboard, 102 factors × 20 coins (factory: `backtest/alpha_factory/`, run: `python -m alpha_factory`)
 
 ## TL;DR rankings (4H, 2023-26, default params)
 | Rank | Combo | CAGR | PF | DD |

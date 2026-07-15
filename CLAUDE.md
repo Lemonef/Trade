@@ -22,6 +22,7 @@ Automated trading strategy R&D. Owner: Zen (19, Thai uni student). Capital ~$2,8
 | `strategies/donchian-breakout/DONCHIAN_V1.pine` | Strategy 4 — pure breakout, hold trend, exit on prior M-low. |
 | `backtest_results/SWEEP_2023_4H.md` | Full 5-strategy × 4-market sweep (2023-26). |
 | `backtest_results/` | Reports + (deleted) scratch screenshots. |
+| `backtest/alpha_factory/` | Factor-mining pipeline (`cd backtest && ../.venv/bin/python -m alpha_factory`). Spec: `docs/superpowers/specs/2026-07-14-alpha-factory-design.md`; tests: `python -m pytest alpha_factory/tests`. |
 
 ## Current best — QB V1 on SOL 4H
 CAGR 23.63%, WR 59.38%, PF 2.3, DD 20.74%. Settings: Risk 5.0, ATR stop 2.5, ADX trend 25, ADX range 20.

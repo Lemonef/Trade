@@ -16,6 +16,17 @@ Active project: **Alpha Factory** — see
 vol-regime factors, Williams VIX Fix capitulation family, IC/ICIR + signal-decay
 scoreboard, GBM synthetic-data harness tests, universe expansion.
 
+## Factory iteration queue (from run findings)
+- **Rebalance-frequency variant (from run 2026-07-15):** first full run — 77/102
+  factors pass FDR (low-vol/liquidity IC ≈ 0.07, ICIR > 8) but ALL die on
+  every-fold-positive net of DAILY-rebalance costs, while their IC at 5d exceeds
+  IC at 1d (slow signals bled by fast trading). Next iteration: evaluate each factor
+  at weekly (and monthly) rebalance in addition to daily, with `n_trials` scaled by
+  the number of variants so the deflated-Sharpe stays honest. A factor must still
+  pass every gate at its chosen speed.
+- pandas `pct_change` FutureWarning cleanup (`fill_method=None` where series are
+  contiguous) — cosmetic, verify results unchanged before/after.
+
 ## Phase 2 — ML ranker (queued behind Alpha Factory)
 - Cross-sectional ML ranker (LightGBM-style, scikit-learn) trained on the factory's
   factor panel; evaluated under the same purged walk-forward + FDR rules.
