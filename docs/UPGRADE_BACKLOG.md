@@ -51,6 +51,10 @@ meta-label entry filter — and judge it under the full factory gate set (purged
 walk-forward, pooled FDR, deflated Sharpe, improvement-vs-book). **Trigger: starts after
 the multi-speed factory iteration and the factory-v2 statistics queue land; it is the
 flagship phase-2 experiment, not a separate system.**
+Zen's conviction note (2026-07-16): he believes this collaboration could be first to
+invent a genuinely new strategy from some untried combination — treat the project not
+only as replication of published turning-point work but as open-ended invention;
+novel-mechanism ideas welcome at trigger time, judged under the same gates.
 
 ## Phase 2 — ML ranker (queued behind Alpha Factory)
 - Cross-sectional ML ranker (LightGBM-style, scikit-learn) trained on the factory's
