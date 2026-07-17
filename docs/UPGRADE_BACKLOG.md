@@ -102,6 +102,13 @@ discipline like everything else. Same trigger as the perfect-model work.
   strip-mined (2026-07-14)._
 
 ## Phase 3 — stock side (spike-hunter)
+- **Index-inclusion/deletion catalyst row (Zen ETF ask, 2026-07-17):** add index events
+  to the catalyst taxonomy — Russell/S&P ADDITION = forced institutional buying
+  (recurring, documented, strongest in small caps), DELETION = forced selling and a
+  red-flag row for held names (the OKLO Russell-deletion pressure case). Reconstitution
+  calendar is public (annual Russell in June, S&P quarterly). Rejected siblings from the
+  same ask: leveraged-ETF decay harvesting (borrow/fee-killed), ETF premium/discount arb
+  (HFT wall); ETF flows = optional weak crowding gauge only.
 - Stock daily-OHLCV panel through the same factory harness → systematic pre-screen
   feeding the daily shortlist (LLM stays the judge). _Provenance: phase-1 design._
 - Adversarial bear pass: a "short-seller attacks this thesis" step before any name
