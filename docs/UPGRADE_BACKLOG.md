@@ -226,6 +226,12 @@ discipline like everything else. Same trigger as the perfect-model work.
   CryptoDataDownload CSVs) — fine for personal research, check before any product use.
 
 ## Explicitly rejected (with reason, so they stay rejected)
+- CFDs (Zen ask 2026-07-17): no informational content to harvest (pure synthetic price
+  wrapper, unlike options) and wrong instrument for the edge — daily overnight financing
+  on leveraged notional compounds against low-turnover long-hold positions, plus
+  broker-book counterparty risk. Only residual value = access-of-last-resort to
+  FX/commodities/bonds legs; when real capital deploys, real ETFs via a stock broker do
+  that job without the drag (Exness stays the noted alt-broker, unused).
 - LLM-imagined backtests ("Two Sigma simulator" prompt): fabricated numbers; the real
   engine + factory exist.
 - Chart-pattern technical analysis packs: repo history shows TA variants lose OOS
