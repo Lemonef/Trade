@@ -107,6 +107,12 @@ discipline like everything else. Same trigger as the perfect-model work.
   strip-mined (2026-07-14)._
 
 ## Phase 3 — stock side (spike-hunter)
+- **Pre-catalyst implied-move row (Zen options-strategies ask, 2026-07-17):** deep-dive
+  upgrade — before earnings/events on a held or proposed name, read the options-implied
+  move (straddle price / chain, free) as one row: is the catalyst priced as a ±5% or a
+  ±40% event? Feeds /6 box (2) "early/not-priced". Information only — options strategies
+  as TRADES (straddle/butterfly/vol-selling) stay rejected per the existing entry
+  (account, spreads, tail risk; reopen only with a deliberate options leg).
 - **Index-inclusion/deletion catalyst row (Zen ETF ask, 2026-07-17):** add index events
   to the catalyst taxonomy — Russell/S&P ADDITION = forced institutional buying
   (recurring, documented, strongest in small caps), DELETION = forced selling and a
