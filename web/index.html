@@ -38,6 +38,7 @@
     </table>
   </div>
   <div id="derivednote" class="note" style="display:none;margin:-6px 2px 14px">Derived book (computed from the sleeve return streams) — Win%/PF/Trades show "—" since it places no trades of its own. Sharpe & drawdown are real.</div>
+  <div id="tabcaveat" class="note" style="display:none;margin:-6px 2px 14px"></div>
   <div class="card"><canvas id="chart" height="118"></canvas>
     <div id="nochart" class="mut" style="display:none;text-align:center;padding:48px 16px;font-family:var(--mono);font-size:13px;line-height:1.6"></div>
   </div>
@@ -117,6 +118,8 @@ function render(){
   const note=document.getElementById('derivednote');
   const isDerived=tab.levels.some(L=>L.derived);
   if(note) note.style.display=isDerived?'block':'none';
+  const cav=document.getElementById('tabcaveat');
+  if(cav){ cav.style.display=tab.caveat?'block':'none'; cav.textContent=tab.caveat?('⚠ '+tab.caveat):''; }
   // warmup banner is TAB-AWARE: only a flat BASE book is "holding cash". Derived books (Blend/Gold/Funding)
   // move continuously (computed from return streams), so "0 trades — holding cash" must NOT show on them.
   const wu=document.getElementById('warmup');

@@ -20,12 +20,31 @@ COINS=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","L
        "LTCUSDT","DOGEUSDT","MATICUSDT","DOTUSDT","ATOMUSDT","NEARUSDT","FILUSDT","UNIUSDT",
        "ETCUSDT","XLMUSDT","ALGOUSDT","ICPUSDT"]
 INTERVAL="4h"; START=10000.0; COST=0.001+0.0005
+BAR_MS=4*3600*1000  # width of one INTERVAL bar in ms — mirrors INTERVAL="4h"; change the two together
 ENTRY,EXIT,MA_LEN,ADX_MIN,ATR_LEN,ATR_STOP,RISK_PCT=55,20,200,25,14,4.0,5.0  # ATR_STOP 2.5->4.0: tight stop whipsawed (bear-validated: FULL Sh 1.42->1.49, DD 18%->14%, 2022 -12.7%->-7.7%)
 FL_THR,FL_CONFIRM,FL_TARGET,FL_MAXBARS=-0.08,-0.02,0.05,2  # FL_MAXBARS 4->2: capitulation bounces are fast (FULL Sh 0.82->0.90, DD 22%->15.6%, better both OOS halves)
 CR_THR,CR_TARGET,CR_MAXBARS=-0.05,0.05,3            # crashreb: BTC<-5% bar -> buy alts, +5%/3bar exit
 LEVELS=[1,2,3]; STRATS=["trend","flush","crashreb"]; BLEND_W=(0.7,0.3)
 BOOK_W=(0.55,0.25,0.20); BEAR_MULT=0.3              # Book v2 weights + bear-regime exposure scale
 REGLOG=HERE/"regime_log.csv"
+# --- derived-dashboard constants (single source; referenced across write_webdata's derived tabs) ---
+SWITCH_COST=2*COST                       # a derived-state change pays two legs (entry+exit / spot+perp) at the per-leg cost used everywhere
+DIV_W=(0.4,0.4)                          # Diversified Blend: 40% trend + 40% gold (+20% cash @0%)
+TG_W=(0.5,0.5)                           # 50/50 Trend+Gold
+CPPI_FLOOR,CPPI_MULT=0.90,5.0            # CPPI: protect 90% of the running peak; exposure = clip(MULT*cushion,0,1)
+REG_FAST_ALT,REG_SLOW_ALT=300,900        # Regime A/B "50/150" — 50d/150d-equiv SMAs on 4h bars
+REG_FAST_CANON,REG_SLOW_CANON=600,1200   # Regime A/B "100/200" — 100d/200d-equiv SMAs on 4h bars
+PRICE_MARGIN=8                           # extra 4h bars so the nearest-preceding join covers the first cycle
+CARRY_TRAIL_N=21                         # carry side-decision window: 7 days x 3 funding periods (trailing only)
+CARRY_BAND=0.00003                       # carry side hysteresis: enter above ~+3% ann funding, exit below ~-3%
+FROTH_ENTER=0.00005                      # carry froth gate: size up when trailing funding annualizes hot
+FROTH_EXIT=FROTH_ENTER/2                 # froth hysteresis: size back down only below HALF the entry threshold
+CARRY_SIZE_HOT,CARRY_SIZE_COOL=1.0,0.3   # carry position size when frothy vs calm
+HR_LEV_HOT,HR_LEV_COOL=1.0,1.5           # Blend High-Return leverage when BTC funding hot vs cool
+HR_TRAIL_N=3                             # trailing funding periods for the high-return throttle decision
+FROTH_FUND_ANN=0.15                      # annualized BTC funding above which the high-return blend throttles down
+REBAL_CAVEAT=("Idealized: rebalances to fixed weights every cycle with no rebalancing cost — the gold/cash "
+              "legs trade frictionlessly; live rebalancing would incur fees/slippage.")
 # Binance market-data hosts, tried in order. data-api.binance.vision is the PUBLIC data mirror
 # that is NOT geo-blocked from cloud IPs — api.binance.com returns 451 from GitHub Actions (the
 # silent "0 trades — holding cash" freeze: every kline fetch was failing). Falls back for resilience.
@@ -43,12 +62,26 @@ def spath(a): return HERE/f"state_{a}.json"
 def epath(a): return HERE/f"equity_{a}.csv"
 TRADELOG=HERE/"trades.csv"
 
+KLINE_PAGE=1000  # Binance hard cap per klines request (>1000 is silently clamped) -> page backward via endTime
 def fetch(sym,limit=400):
     last=None
     for host in KLINE_HOSTS:                                  # vision mirror first (cloud-safe), then api.binance.com
         try:
-            r=requests.get(host+"/api/v3/klines",params={"symbol":sym,"interval":INTERVAL,"limit":limit},timeout=20); r.raise_for_status()
-            df=pd.DataFrame(r.json(),columns=["t","o","h","l","c","v","ct","q","n","tb","tq","ig"])
+            rows={}                                           # open-time(ms) -> raw kline row; dedupe across pages
+            end=None                                          # endTime cursor; None = most-recent page
+            while len(rows)<limit:                            # page backward until `limit` bars are honestly satisfied
+                params={"symbol":sym,"interval":INTERVAL,"limit":min(KLINE_PAGE,limit-len(rows))}
+                if end is not None: params["endTime"]=end
+                r=requests.get(host+"/api/v3/klines",params=params,timeout=20); r.raise_for_status()
+                page=r.json()
+                if not page: break                            # exchange returned nothing more
+                before=len(rows)
+                for row in page: rows[int(row[0])]=row        # dedupe on open-time
+                if len(rows)==before: break                   # no NEW bars -> stop (guard against a non-advancing loop)
+                end=int(page[0][0])-1                         # next page ends just before this page's oldest bar
+                if len(page)<KLINE_PAGE: break                # short page -> reached the start of available history
+            ordered=[rows[t] for t in sorted(rows)][-limit:]  # chronological; honor the requested tail length
+            df=pd.DataFrame(ordered,columns=["t","o","h","l","c","v","ct","q","n","tb","tq","ig"])
             for x in ["o","h","l","c"]: df[x]=df[x].astype(float)
             return df
         except Exception as e:
@@ -189,6 +222,57 @@ def read_regime():
                     except ValueError: pass
     return out
 
+# --- timestamp-join helpers for the gold/BTC-bearing derived tabs (DD5/DD6) ---
+def _iso_ms(iso):
+    """cycle timestamp (ISO, minute-truncated, tz-aware or naive-UTC) -> epoch ms."""
+    dt_=datetime.fromisoformat(iso)
+    if dt_.tzinfo is None: dt_=dt_.replace(tzinfo=timezone.utc)
+    return int(dt_.timestamp()*1000)
+def align_series(df,times_ms):
+    """Timestamp join: for each cycle time, the close of the nearest bar whose OPEN-time precedes it
+    (searchsorted). None where the cycle predates the first bar -> caller DROPS it, never zero-fills."""
+    ot=df["t"].astype("int64").values; cl=df["c"].astype(float).values; out=[]
+    for tm in times_ms:
+        j=int(np.searchsorted(ot,tm,side="right"))-1
+        out.append(float(cl[j]) if j>=0 else None)
+    return out
+def align_flags(df,flags,times_ms):
+    """Like align_series but for a regime-flag series (1.0/0.0/NaN). None where the nearest bar's flag is
+    undefined (MA warmup) or the cycle predates the first bar -> DD6: warmup cycles are omitted, not faked."""
+    ot=df["t"].astype("int64").values; fv=np.asarray(flags,dtype=float); out=[]
+    for tm in times_ms:
+        j=int(np.searchsorted(ot,tm,side="right"))-1
+        out.append(float(fv[j]) if (j>=0 and fv[j]==fv[j]) else None)
+    return out
+def price_to_rets(prices):
+    """aligned prices (len n) -> per-WINDOW returns (len n-1); None where either endpoint is undefined."""
+    out=[]
+    for i in range(len(prices)-1):
+        a,b=prices[i],prices[i+1]
+        out.append((b/a-1) if (a is not None and b is not None and a>0) else None)
+    return out
+def switch_costs(exposure,defined,prev0=0.0):
+    """SWITCH_COST on |Δexposure| between consecutive DEFINED windows (DD4); the first defined window pays
+    entry from `prev0` (0 = from flat). Returns a per-window cost list (None where the window is undefined)."""
+    out=[None]*len(exposure); prev=prev0
+    for i in range(len(exposure)):
+        if not defined[i]: continue
+        out[i]=SWITCH_COST*abs(exposure[i]-prev); prev=exposure[i]
+    return out
+def curve_block(key,times,net,derived=True):
+    """Build 1x/2x/3x equity blocks from per-window net returns. net[i]=None OMITS that window entirely
+    (DD6 warmup / DD5 missing-bar / DD7 funding-gap honesty -> a shorter curve, never a fake flat point)."""
+    lv=[]
+    for L in LEVELS:
+        eqb=START; ser=[]
+        for i in range(len(net)):
+            if net[i] is None: continue
+            if not ser: ser=[[times[i],START]]
+            eqb*=(1+L*net[i])
+            ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
+        lv.append({"lev":f"{L}x", **block(f"{key}_{L}x", ser, eqb, derived=derived)})
+    return lv
+
 def write_webdata(totals, states, btc_ok=True):
     tabs=[]
     for strat,label in [("trend","Donchian (trend)"),("flush","Flush reversion"),("crashreb","Crashreb (BTC-crash bounce)")]:
@@ -219,138 +303,104 @@ def write_webdata(totals, states, btc_ok=True):
         tsk,fsk,xsk=ts[-k:],fs[-k:],xs[-k:]; regk=reglog[-k:] if len(reglog)>=k else reglog
         times=[r[0] for r in tsk]; tr=rets(tsk); fr=rets(fsk); xr=rets(xsk)
         for L in LEVELS:
-            eqb=START; ser=[[times[0],START]]
+            eqb=START; ser=[[times[0],START]]; prev_mult=None
             for i in range(len(tr)):
-                bull = regk[i+1] if i+1<len(regk) else (regk[-1] if regk else 1)
+                # DD2 causality: the regime known at a window's START scales THAT window's return.
+                # regk[i] is logged at cycle i (window start); regk[i+1] was end-of-window = look-ahead.
+                bull = regk[i] if i<len(regk) else (regk[-1] if regk else 1)
                 mult = 1.0 if bull else BEAR_MULT
-                eqb*=(1+L*mult*(BOOK_W[0]*tr[i]+BOOK_W[1]*fr[i]+BOOK_W[2]*xr[i]))
+                if prev_mult is None: prev_mult=mult                       # always-deployed overlay -> no inception cost, only flips pay
+                sw = SWITCH_COST*abs(mult-prev_mult)                       # DD4b: a regime flip moves |Δexposure| notional -> costs like every other switch
+                eqb*=(1+L*(mult*(BOOK_W[0]*tr[i]+BOOK_W[1]*fr[i]+BOOK_W[2]*xr[i]) - sw))
+                prev_mult=mult
                 ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
             v2.append({"lev":f"{L}x", **block(f"bookv2_{L}x", ser, eqb, derived=True)})
     else:
         v2=[{"lev":f"{L}x", **block(f"bookv2_{L}x", [], START, derived=True)} for L in LEVELS]
     tabs.append({"name":"Book v2 (upgraded ★)","levels":v2})
-    # Diversified Blend ★ — 40% crypto-trend + 40% gold(PAXG) + 20% cash. ALL on Binance (PAXGUSDT), ONE account.
-    # LIVE/FORWARD derived track (computed from the live trend sleeve + live PAXG price, no extra trades/state) —
-    # same forward-test basis as every other tab. Accrues real out-of-sample results going forward; sits at start
-    # during warmup (block() guards CAGR/Sharpe under 60 bars so warmup never annualizes to nonsense).
-    # Validated 8y backtest for reference (NOT shown here): 1x 25.8% CAGR / Sharpe 1.24 / -13.4% DD.
+    # ---- Gold/BTC-bearing derived tabs: ONE shared timestamp-joined setup (DD5/DD6) ----
+    # Cycle timestamps are irregular bot run-times with gaps; klines sit on clean 4h boundaries. Each cycle is
+    # joined to the nearest-preceding bar (never positional tail-align, never zero-fill); cycles with no bar or an
+    # undefined regime MA are dropped so the curve is honestly shorter. Each price source is fetched ONCE and reused.
+    trr=rets(ts) if len(ts)>1 else []
+    if len(ts)>1:
+        times=[r[0] for r in ts]; times_ms=[_iso_ms(t) for t in times]
+        span_bars=int((int(time.time()*1000)-times_ms[0])//BAR_MS)+PRICE_MARGIN     # 4h bars spanning the whole cycle range
+        try: gld=price_to_rets(align_series(fetch("PAXGUSDT",span_bars),times_ms))   # per-window gold return, None where no bar
+        except Exception: gld=[None]*len(trr)
+        try:
+            bc_df=fetch("BTCUSDT",span_bars+REG_SLOW_CANON)                          # deep enough for the 200d (1200-bar) MA on EVERY cycle
+            btc_win=price_to_rets(align_series(bc_df,times_ms))
+        except Exception:
+            bc_df=None; btc_win=[None]*len(trr)
+    else:
+        times=[now()[:16]]; times_ms=[]; gld=[]; btc_win=[]; bc_df=None
+    def _empty_levels(key): return [{"lev":f"{L}x", **block(f"{key}_{L}x", [], START, derived=True)} for L in LEVELS]
+
+    # Diversified Blend ★ — 40% crypto-trend + 40% gold(PAXG) + 20% cash. ONE derived track (no extra trades/state);
+    # block() guards CAGR/Sharpe under 60 bars so warmup never annualizes to nonsense. Ref 8y backtest (not shown):
+    # 1x 25.8% CAGR / Sharpe 1.24 / -13.4% DD.
     try:
-        dbl=[]
-        if len(ts)>1:
-            times=[r[0] for r in ts]; tr=rets(ts)
-            pc=fetch("PAXGUSDT",limit=len(ts)+5)["c"].pct_change().fillna(0).tolist()
-            gr=pc[-len(tr):] if len(pc)>=len(tr) else [0.0]*len(tr)
-            gr=(gr+[0.0]*len(tr))[:len(tr)]
-            for L in LEVELS:
-                eqb=START; ser=[[times[0],START]]
-                for i in range(len(tr)):
-                    eqb*=(1+L*(0.4*tr[i]+0.4*gr[i]))   # +0.2 cash @ 0%
-                    ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
-                dbl.append({"lev":f"{L}x", **block(f"divblend_{L}x", ser, eqb, derived=True)})
-        else:
-            dbl=[{"lev":f"{L}x", **block(f"divblend_{L}x", [], START, derived=True)} for L in LEVELS]
-        tabs.append({"name":"Diversified Blend (40/40/20) ★ core","levels":dbl})
+        net=[DIV_W[0]*trr[i]+DIV_W[1]*gld[i] if (i<len(gld) and gld[i] is not None) else None for i in range(len(trr))]
+        tabs.append({"name":"Diversified Blend (40/40/20) ★ core","levels":curve_block("divblend",times,net),"caveat":REBAL_CAVEAT})
     except Exception:
-        tabs.append({"name":"Diversified Blend (40/40/20) ★ core",
-                     "levels":[{"lev":f"{L}x", **block(f"divblend_{L}x", [], START, derived=True)} for L in LEVELS]})
-    # Regime A/B forward-test (CLEAN) — FIXED 2026-06-15. The OLD "Diversified Blend · 50/150" tab DOUBLE-GATED:
-    # it masked the already-200MA+Donchian-gated TREND-SLEEVE returns AGAIN with 50/150 (intersection), so it tested
-    # "trend AND 50/150", NOT "50/150 INSTEAD OF 200MA". Now both tabs gate RAW BTC returns PURELY by their own regime MA,
-    # so 50/150 vs canonical 100/200 differ ONLY by the window = a faithful live A/B of the R3 free-upgrade. Mirrors the
-    # backtest base (BTC×regime + gold + cash). 4h bars: 300/900 = 50d/150d ; 600/1200 = 100d/200d (daily-equiv). shift(1)=no lookahead.
+        tabs.append({"name":"Diversified Blend (40/40/20) ★ core","levels":_empty_levels("divblend"),"caveat":REBAL_CAVEAT})
+    # Regime A/B forward-test (CLEAN) — both tabs gate RAW BTC returns PURELY by their own regime MA, so 50/150 vs
+    # canonical 100/200 differ ONLY by the window = a faithful live A/B of the R3 free-upgrade. 40% regime-gated-BTC +
+    # 40% gold + 20% cash. Causal: the MA-warmup bars are UNDEFINED (dropped, DD6 — never faked as "cash"); shift(1)
+    # keeps the regime one bar behind; the BTC leg pays SWITCH_COST on every entry/exit (DD4a).
+    def regime_ab(label,key,fast,slow):
+        try:
+            if bc_df is None: raise RuntimeError("no BTC bars")
+            bc=bc_df["c"].astype(float); maf=bc.rolling(fast).mean(); mas=bc.rolling(slow).mean()
+            reg=((bc>maf)&(bc>mas)).astype(float).mask(maf.isna()|mas.isna())        # NaN during MA warmup -> stays undefined, not False
+            reg=reg.shift(1)                                                          # regime known at prior close applies to this bar (no lookahead)
+            reg_on=align_flags(bc_df,reg,times_ms)                                    # per-cycle flag; None where warmup / pre-first-bar
+            defined=[(i<len(gld) and gld[i] is not None and btc_win[i] is not None and reg_on[i] is not None) for i in range(len(trr))]
+            exposure=[(DIV_W[0]*reg_on[i]) if (reg_on[i] is not None) else 0.0 for i in range(len(trr))]  # BTC-leg notional: 0 or 0.4
+            cost=switch_costs(exposure,defined,prev0=0.0)                             # DD4a: BTC-leg entry/exit pays on |Δexposure|
+            net=[(DIV_W[0]*btc_win[i]*reg_on[i]+DIV_W[1]*gld[i]-cost[i]) if defined[i] else None for i in range(len(trr))]
+            tabs.append({"name":label,"levels":curve_block(key,times,net),"caveat":REBAL_CAVEAT})
+        except Exception:
+            tabs.append({"name":label,"levels":_empty_levels(key),"caveat":REBAL_CAVEAT})
+    regime_ab("Regime A/B · 50/150 SMA (clean) ★","reg50150",REG_FAST_ALT,REG_SLOW_ALT)
+    regime_ab("Regime A/B · canonical 100/200 SMA (clean)","reg100200",REG_FAST_CANON,REG_SLOW_CANON)
+    # Diversified Blend + CPPI floor ★ risk-off — path-dependent drawdown floor on the 40/40/20 blend (HALVES CAGR but
+    # floors maxDD; gross<=1 so no financing). Causal: exposure e_t from PRE-cycle equity vs trailing CPPI_FLOOR*peak.
     try:
-        if len(ts)>1:
-            times=[r[0] for r in ts]; tr=rets(ts)
-            pc=fetch("PAXGUSDT",limit=len(ts)+5)["c"].pct_change().fillna(0).tolist()
-            gr=(pc[-len(tr):]+[0.0]*len(tr))[:len(tr)] if len(pc)>=len(tr) else [0.0]*len(tr)
-            bc=fetch("BTCUSDT",limit=1300)["c"]                              # >=1200 bars so the 200d (1200-bar) MA is valid on the tail
-            btc_ret=bc.pct_change().fillna(0)
-            def regime_ab(label,key,fast,slow):
-                try:
-                    reg=((bc>bc.rolling(fast).mean())&(bc>bc.rolling(slow).mean())).shift(1).fillna(False)  # lagged, no lookahead
-                    cr=(btc_ret*reg.astype(float)).tolist()                  # RAW BTC return, 0 when regime OFF — CLEAN swap (no double-gate)
-                    cr=(([0.0]*len(tr))+cr)[-len(tr):]                        # align to the cycle tail
-                    lv=[]
-                    for L in LEVELS:
-                        eqb=START; ser=[[times[0],START]]
-                        for i in range(len(tr)):
-                            eqb*=(1+L*(0.4*cr[i]+0.4*gr[i]))                  # 40% regime-gated-BTC + 40% gold + 20% cash
-                            ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
-                        lv.append({"lev":f"{L}x", **block(f"{key}_{L}x", ser, eqb, derived=True)})
-                    tabs.append({"name":label,"levels":lv})
-                except Exception:
-                    tabs.append({"name":label,"levels":[{"lev":f"{L}x", **block(f"{key}_{L}x", [], START, derived=True)} for L in LEVELS]})
-            regime_ab("Regime A/B · 50/150 SMA (clean) ★","reg50150",300,900)
-            regime_ab("Regime A/B · canonical 100/200 SMA (clean)","reg100200",600,1200)
-        else:
-            for label,key in [("Regime A/B · 50/150 SMA (clean) ★","reg50150"),("Regime A/B · canonical 100/200 SMA (clean)","reg100200")]:
-                tabs.append({"name":label,"levels":[{"lev":f"{L}x", **block(f"{key}_{L}x", [], START, derived=True)} for L in LEVELS]})
-    except Exception:
-        pass
-    # Diversified Blend + CPPI floor ★ risk-off — NEW tab (additive). Path-dependent drawdown floor on the 40/40/20 blend
-    # (R3 backtest special-case: HALVES CAGR but floors maxDD to ~-6%; floor_frac 0.90, m 5, gross<=1 -> no financing).
-    # Causal: exposure e_t from PRE-cycle equity vs trailing 0.90*peak (de-risk toward cash as equity nears the floor).
-    try:
+        base=[DIV_W[0]*trr[i]+DIV_W[1]*gld[i] if (i<len(gld) and gld[i] is not None) else None for i in range(len(trr))]
         cpp=[]
-        if len(ts)>1:
-            times=[r[0] for r in ts]; tr=rets(ts)
-            pc=fetch("PAXGUSDT",limit=len(ts)+5)["c"].pct_change().fillna(0).tolist()
-            gr=(pc[-len(tr):]+[0.0]*len(tr))[:len(tr)] if len(pc)>=len(tr) else [0.0]*len(tr)
-            base=[0.4*tr[i]+0.4*gr[i] for i in range(len(tr))]      # 40/40/20 blend per-cycle (cash leg @0%)
-            for L in LEVELS:
-                eqb=START; ser=[[times[0],START]]; peak=START
-                for i in range(len(base)):
-                    floor=0.90*peak; cush=(eqb-floor)/eqb if eqb>0 else 0.0
-                    et=max(0.0,min(5.0*cush,1.0))                  # CPPI exposure 0..1 (gross<=1, no financing)
-                    eqb*=(1+et*base[i])                            # CPPI is <=1x BY DESIGN; no L (2x/3x rows mirror 1x, like the backtest board)
-                    peak=max(peak,eqb)
-                    ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
-                cpp.append({"lev":f"{L}x", **block(f"divcppi_{L}x", ser, eqb, derived=True)})
-        else:
-            cpp=[{"lev":f"{L}x", **block(f"divcppi_{L}x", [], START, derived=True)} for L in LEVELS]
-        tabs.append({"name":"Diversified Blend + CPPI floor ★ R3 risk-off","levels":cpp})
+        for L in LEVELS:
+            eqb=START; ser=[]; peak=START
+            for i in range(len(base)):
+                if base[i] is None: continue                                         # DD6: drop cycles with no gold bar
+                if not ser: ser=[[times[i],START]]
+                floor=CPPI_FLOOR*peak; cush=(eqb-floor)/eqb if eqb>0 else 0.0
+                et=max(0.0,min(CPPI_MULT*cush,1.0))                                   # CPPI exposure 0..1 (gross<=1, no financing)
+                eqb*=(1+et*base[i]); peak=max(peak,eqb)                               # <=1x BY DESIGN; no L (2x/3x mirror 1x, like the board)
+                ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
+            cpp.append({"lev":f"{L}x", **block(f"divcppi_{L}x", ser, eqb, derived=True)})
+        tabs.append({"name":"Diversified Blend + CPPI floor ★ R3 risk-off","levels":cpp,"caveat":REBAL_CAVEAT})
     except Exception:
-        tabs.append({"name":"Diversified Blend + CPPI floor ★ R3 risk-off",
-                     "levels":[{"lev":f"{L}x", **block(f"divcppi_{L}x", [], START, derived=True)} for L in LEVELS]})
-    # --- Extra recommended tabs (LIVE/FORWARD derived from Binance, additive, block() guarded) ---
-    def derived_tab(name, key, perbar):
-        try:
-            if len(ts)>1 and perbar:
-                times=[r[0] for r in ts]; lv=[]
-                for L in LEVELS:
-                    eqb=START; ser=[[times[0],START]]
-                    for i in range(len(perbar)):
-                        eqb*=(1+L*perbar[i])
-                        ser.append([times[i+1] if i+1<len(times) else now()[:16],round(eqb,2)])
-                    lv.append({"lev":f"{L}x", **block(f"{key}_{L}x", ser, eqb, derived=True)})
-            else:
-                lv=[{"lev":f"{L}x", **block(f"{key}_{L}x", [], START, derived=True)} for L in LEVELS]
-        except Exception:
-            lv=[{"lev":f"{L}x", **block(f"{key}_{L}x", [], START, derived=True)} for L in LEVELS]
-        tabs.append({"name":name,"levels":lv})
+        tabs.append({"name":"Diversified Blend + CPPI floor ★ R3 risk-off","levels":_empty_levels("divcppi"),"caveat":REBAL_CAVEAT})
+    # --- Gold / 50-50 / Blend-HR / BTC buy-hold (all timestamp-joined, block() guarded) ---
+    # DD3: the funding throttle is a CAUSAL per-cycle series computed from the TRAILING funding known at each cycle's
+    # START (was one current-funding value stamped retroactively over all history).
+    try: fr_hist=fetch_funding("BTCUSDT",1000)
+    except Exception: fr_hist=[]
+    def hr_lev_at(cycle_ms):
+        trail=[r for ft,r in fr_hist if ft<=cycle_ms][-HR_TRAIL_N:]                   # only funding printed before the cycle start
+        ann=(sum(trail)/len(trail))*3*365 if trail else 0.0
+        return HR_LEV_HOT if ann>FROTH_FUND_ANN else HR_LEV_COOL
+    hr=[hr_lev_at(times_ms[i]) for i in range(len(trr))]                              # decision at window START times[i]
     try:
-        trr=rets(ts) if len(ts)>1 else []
-        def align(sym):
-            try:
-                pc=fetch(sym,limit=len(ts)+5)["c"].pct_change().fillna(0).tolist()
-                a=pc[-len(trr):] if len(pc)>=len(trr) else [0.0]*len(trr)
-                return (a+[0.0]*len(trr))[:len(trr)]
-            except Exception:
-                return [0.0]*len(trr)
-        grr=align("PAXGUSDT"); brr=align("BTCUSDT"); m=len(trr)
-        derived_tab("Gold (PAXG) ★ diversifier","goldph",grr)
-        derived_tab("50/50 Trend+Gold ★ (aggressive)","tg5050",[0.5*trr[i]+0.5*grr[i] for i in range(m)])
-        # finance-aware throttle: cut leverage 1.5x->1.0x when BTC perp funding annualizes hot (>15%) — avoids max size into crowded-long unwinds
-        try:
-            _fr=fetch_funding("BTCUSDT",6); _recent=(sum(r for _,r in _fr[-3:])/3) if _fr else 0.0
-            hr_lev=1.0 if (_recent*3*365>0.15) else 1.5
-        except Exception:
-            hr_lev=1.5
-        derived_tab(f"Blend High-Return ★ (levered <=2x, funding-throttled @{hr_lev}x)","blendhr",[hr_lev*(0.4*trr[i]+0.4*grr[i]) for i in range(m)])
-        derived_tab("BTC buy-hold (benchmark)","btchold",brr)
-        # REMOVED 2026-06-09: "Blend+ (cash-yield 5%)" tab — it injected a SYNTHETIC +0.2*5%/yr drip every bar,
-        # showing a fake guaranteed uptrend on the FORWARD board (misleading; looked like gains/trades).
-        # Cash-yield is a REAL-ACCOUNT action (move USDT to Binance Earn) + lives in the backtest scoreboard (labeled modeled). Not simulated on the live board.
+        def _gold_net(fn): return [fn(i) if (i<len(gld) and gld[i] is not None) else None for i in range(len(trr))]
+        tabs.append({"name":"Gold (PAXG) ★ diversifier","levels":curve_block("goldph",times,_gold_net(lambda i: gld[i]))})
+        tabs.append({"name":"50/50 Trend+Gold ★ (aggressive)","levels":curve_block("tg5050",times,_gold_net(lambda i: TG_W[0]*trr[i]+TG_W[1]*gld[i])),"caveat":REBAL_CAVEAT})
+        tabs.append({"name":f"Blend High-Return ★ (levered <=2x, funding-throttled {HR_LEV_HOT}–{HR_LEV_COOL}x)",
+                     "levels":curve_block("blendhr",times,_gold_net(lambda i: hr[i]*(DIV_W[0]*trr[i]+DIV_W[1]*gld[i]))),"caveat":REBAL_CAVEAT})
+        bh=[btc_win[i] if (i<len(btc_win) and btc_win[i] is not None) else None for i in range(len(trr))]
+        tabs.append({"name":"BTC buy-hold (benchmark)","levels":curve_block("btchold",times,bh)})
     except Exception:
         pass
     # Funding / Carry ★ — delta-neutral perp funding harvest (the real retail edge; ~8-20% APY, low DD).
@@ -359,8 +409,10 @@ def write_webdata(totals, states, btc_ok=True):
     # HONEST SIM (2026-07-17 fix — the old version took abs(funding) every period = teleporting to the paying
     # side for free, which overstates carry in a low/sign-flipping regime): the position is long-spot/short-perp
     # or FLAT, the side is decided from TRAILING funding only (no lookahead), surprise negative periods are PAID,
-    # and every state change costs two legs (spot + perp) at the same COST used everywhere else.
-    # block() annualization is wrong for 8h periods, so stats computed here at 3 periods/day.
+    # and every state change costs two legs (spot + perp) at the same COST used everywhere else. The froth SIZE gate
+    # now has its own hysteresis (enter at FROTH_ENTER, exit only below half — mirrors the side switch) and a resize
+    # pays SWITCH_COST on the |Δsize| notional (DD4c). ETH funding gaps are SKIPPED and counted (DD7 — never bridged
+    # with BTC's rate). block() annualization is wrong for 8h periods, so stats computed here at 3 periods/day.
     def fund_block(key,ser,eqf,L):
         ev=[s[1] for s in ser]; mdd=0.0; pk=ev[0] if ev else START
         for v in ev: pk=max(pk,v); mdd=min(mdd,v/pk-1)
@@ -375,33 +427,36 @@ def write_webdata(totals, states, btc_ok=True):
                 "derived":True,"series":ser}
     try:
         fb=fetch_funding("BTCUSDT",1000); fe=dict(fetch_funding("ETHUSDT",1000))
-        SWITCH_COST=2*COST      # enter/exit = spot leg + perp leg, same per-leg cost as the rest of the bot
-        TRAIL_N=21              # decision window: 7 days x 3 periods — trailing only, no lookahead
-        BAND=0.00003            # hysteresis: enter when trailing funding annualizes above ~+3% (0.00003*3*365),
-                                # exit below ~-3%; hold in between (flipping on every sign change churns SWITCH_COST to death)
+        eth_skipped=0
         if len(fb)>=60:
             fl=[]
             for L in LEVELS:
-                eqf=START; ser=[]; hist=[]; pos=0
+                eqf=START; ser=[]; hist=[]; pos=0; gate=CARRY_SIZE_COOL; skipped=0
                 for t,rbt in fb:
-                    ret=fe.get(t,rbt)
-                    w=hist[-TRAIL_N:]; sig=sum(w)/len(w) if w else 0.0
+                    if t not in fe:                                 # DD7: no ETH funding this period -> skip + count (don't bridge with BTC's rate)
+                        skipped+=1; continue
+                    ret=fe[t]
+                    w=hist[-CARRY_TRAIL_N:]; sig=sum(w)/len(w) if w else 0.0
                     want=pos
-                    if pos==0 and sig>BAND: want=1
-                    elif pos==1 and sig<-BAND: want=0
-                    gate=1.0 if sig>=0.00005 else 0.3               # size up when funding frothy (trailing, not current)
-                    pnl=want*gate*(rbt+ret)/2.0 - (SWITCH_COST if want!=pos else 0.0)
+                    if pos==0 and sig>CARRY_BAND: want=1
+                    elif pos==1 and sig<-CARRY_BAND: want=0
+                    newgate=gate                                    # DD4c: froth gate is now hysteretic (was a bare threshold -> flip-churned)
+                    if gate<CARRY_SIZE_HOT and sig>=FROTH_ENTER: newgate=CARRY_SIZE_HOT
+                    elif gate>=CARRY_SIZE_HOT and sig<FROTH_EXIT: newgate=CARRY_SIZE_COOL
+                    side_cost=SWITCH_COST if want!=pos else 0.0     # entry/exit = full two-leg switch (existing)
+                    gate_cost=SWITCH_COST*abs(newgate-gate) if (pos==1 and want==1) else 0.0  # resize an OPEN position (|0.7| notional); entry cost already covers a fresh open
+                    pnl=want*newgate*(rbt+ret)/2.0 - side_cost - gate_cost
                     eqf*=(1+L*pnl)
-                    pos=want; hist.append((rbt+ret)/2.0)
+                    pos=want; gate=newgate; hist.append((rbt+ret)/2.0)
                     ser.append([datetime.fromtimestamp(t/1000,timezone.utc).isoformat()[:16],round(eqf,2)])
-                fl.append(fund_block(f"funding_{L}x",ser,eqf,L))
-            tabs.append({"name":"Funding / Carry ★ (delta-neutral, real edge)","levels":fl})
+                fl.append(fund_block(f"funding_{L}x",ser,eqf,L)); eth_skipped=skipped
+            tabs.append({"name":"Funding / Carry ★ (delta-neutral, real edge)","levels":fl,"eth_funding_skipped":eth_skipped})
         else:
             tabs.append({"name":"Funding / Carry ★ (delta-neutral, real edge)",
-                         "levels":[fund_block(f"funding_{L}x",[],START,L) for L in LEVELS]})
+                         "levels":[fund_block(f"funding_{L}x",[],START,L) for L in LEVELS],"eth_funding_skipped":0})
     except Exception:
         tabs.append({"name":"Funding / Carry ★ (delta-neutral, real edge)",
-                     "levels":[fund_block(f"funding_{L}x",[],START,L) for L in LEVELS]})
+                     "levels":[fund_block(f"funding_{L}x",[],START,L) for L in LEVELS],"eth_funding_skipped":0})
     pos=[{"coin":c,"strat":"trend","units":round(cs["units"],6),"entry":cs["entry"],"stop":round(cs.get("stop",0),6)}
          for c,cs in states["trend_1x"]["coins"].items() if cs["units"]>0]
     pos+=[{"coin":c,"strat":"flush","units":round(cs["units"],6),"entry":cs["entry"],"stop":"+5%/2bar"}

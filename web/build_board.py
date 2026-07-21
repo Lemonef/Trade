@@ -244,12 +244,13 @@ HTML = r"""<!doctype html>
 </div>
 <script>
  const DATA=__DATA__; let L="1x", P="recent", key="cagr", dir=-1, sel=DATA[0], selLev="1x";
+ const FINANCING_PCT=10;   // annual financing drag per extra leverage unit (%/yr) — single source for the leverage projection
  const f=(v,s="")=>{if(v===null||v===undefined||Number.isNaN(v))return `<span style="color:var(--dim)">—</span>`;const c=v>0?"pos":(v<0?"neg":"");return `<span class="${c}">${v}${s}</span>`};
  const fp=(v,s="")=>(v===null||v===undefined||Number.isNaN(v))?`<span style="color:var(--dim)">—</span>`:v+s;  // plain, no sign-color
  function projLev(p,lev){const n=lev==='all'?1:(parseInt(lev)||1);if(n<=1)return p;
    const sig=p.sharpe?Math.abs(p.cagr/p.sharpe)/100:0.25;      // annual vol (decimal) ≈ CAGR/Sharpe
    const drag=((n*n-n)/2)*sig*sig*100;                          // leverage VOLATILITY DRAG (%)
-   const cagr=Math.round((n*p.cagr-(n-1)*10-drag)*10)/10;       // N×ret − financing − vol drag
+   const cagr=Math.round((n*p.cagr-(n-1)*FINANCING_PCT-drag)*10)/10;       // N×ret − financing − vol drag
    const maxdd=Math.round(p.maxdd*n*10)/10;
    const liq=(maxdd*2)<=-100;                                   // real DD≈2× → wipeout
    return Object.assign({},p,{cagr,maxdd,calmar:maxdd?Math.round(cagr/Math.abs(maxdd)*100)/100:null,_proj:true,ruin:liq});}
