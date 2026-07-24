@@ -1,6 +1,6 @@
 {
   "stocks": {
-    "built_utc": "2026-07-24 17:46 UTC",
+    "built_utc": "2026-07-24 21:15 UTC",
     "data_asof": "2026-07-24",
     "n_positions": 5,
     "tickers": [
@@ -13,13 +13,13 @@
     "ok": true
   },
   "scans": {
-    "built_utc": "2026-07-24 17:46 UTC",
+    "built_utc": "2026-07-24 21:15 UTC",
     "newest_report": "2026-07-24",
     "n_reports": 52,
     "ok": true
   },
   "crypto_bot": {
-    "updated": "2026-07-24T17:46",
+    "updated": "2026-07-24T21:15",
     "regime": "bull",
     "open_positions": 2,
     "total_trades": 15,
